@@ -52,6 +52,16 @@ type LightningConfig = CommonConfig & {
   memo: string;
 };
 
+type LiquidityPoolConfig = CommonConfig & {
+  action: 'addLiquidity' | 'removeLiquidity';
+  tokenA: string;
+  tokenB: string;
+  amountA: string;
+  amountB: string;
+  lpTokenAmount: string;
+  slippage: string;
+};
+
 export function ConfigPanel() {
   const selectedNode = (window as any).selectedWorkflowNode;
   const { updateNodeData } = useWorkflow();
@@ -99,6 +109,17 @@ export function ConfigPanel() {
     memo: "Payment for services",
   });
 
+  const [lpConfig, setLpConfig] = useState<LiquidityPoolConfig>({
+    moduleName: "Add Liquidity",
+    action: "addLiquidity",
+    tokenA: "SOL",
+    tokenB: "USDC",
+    amountA: "1.0",
+    amountB: "150.0",
+    lpTokenAmount: "0",
+    slippage: "1",
+  });
+
   // Update form based on selected node
   useEffect(() => {
     if (selectedNode) {
@@ -140,6 +161,15 @@ export function ConfigPanel() {
           setLightningConfig(prev => ({
             ...prev,
             moduleName: currentData.label || "Lightning Payment",
+            ...currentData.config
+          }));
+          break;
+        case "liquidityPool":
+        case "addLiquidity":
+        case "removeLiquidity":
+          setLpConfig(prev => ({
+            ...prev,
+            moduleName: currentData.label || "Add Liquidity",
             ...currentData.config
           }));
           break;
@@ -189,8 +219,17 @@ export function ConfigPanel() {
           config: { ...lightningConfig }
         };
         break;
+      case "liquidityPool":
+      case "addLiquidity":
+      case "removeLiquidity":
+        newData = {
+          ...newData,
+          label: lpConfig.moduleName,
+          config: { ...lpConfig }
+        };
+        break;
     }
-    
+
     updateNodeData(selectedNode.id, newData);
     toast({
       title: "Configuration Applied",
@@ -245,6 +284,20 @@ export function ConfigPanel() {
           recipient: "lightning@example.com",
           amount: "0.01",
           memo: "Payment for services",
+        });
+        break;
+      case "liquidityPool":
+      case "addLiquidity":
+      case "removeLiquidity":
+        setLpConfig({
+          moduleName: "Add Liquidity",
+          action: "addLiquidity",
+          tokenA: "SOL",
+          tokenB: "USDC",
+          amountA: "1.0",
+          amountB: "150.0",
+          lpTokenAmount: "0",
+          slippage: "1",
         });
         break;
     }
@@ -693,45 +746,45 @@ export function ConfigPanel() {
             </div>
             <h3 className="text-base font-medium">Lightning Configuration</h3>
           </div>
-          
+
           <div className="space-y-3">
             <div>
               <Label className="text-xs text-muted-foreground">Module Name</Label>
-              <Input 
-                value={lightningConfig.moduleName} 
+              <Input
+                value={lightningConfig.moduleName}
                 onChange={(e) => setLightningConfig({...lightningConfig, moduleName: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
             </div>
-            
+
             <div>
               <Label className="text-xs text-muted-foreground">Recipient</Label>
-              <Input 
-                value={lightningConfig.recipient} 
+              <Input
+                value={lightningConfig.recipient}
                 onChange={(e) => setLightningConfig({...lightningConfig, recipient: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
             </div>
-            
+
             <div>
               <Label className="text-xs text-muted-foreground">Amount</Label>
-              <Input 
-                type="text" 
-                value={lightningConfig.amount} 
+              <Input
+                type="text"
+                value={lightningConfig.amount}
                 onChange={(e) => setLightningConfig({...lightningConfig, amount: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
             </div>
-            
+
             <div>
               <Label className="text-xs text-muted-foreground">Memo</Label>
-              <Input 
-                value={lightningConfig.memo} 
+              <Input
+                value={lightningConfig.memo}
                 onChange={(e) => setLightningConfig({...lightningConfig, memo: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
             </div>
-            
+
             <Card className="bg-muted p-3 text-xs">
               <div className="flex justify-between mb-1">
                 <span className="text-muted-foreground">Speed:</span>
@@ -746,7 +799,169 @@ export function ConfigPanel() {
         </div>
       );
       break;
-      
+
+    case "liquidityPool":
+    case "addLiquidity":
+    case "removeLiquidity":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full bg-cyan-500 bg-opacity-20 flex items-center justify-center">
+              <span className="material-icons text-cyan-500">water_drop</span>
+            </div>
+            <h3 className="text-base font-medium">Liquidity Pool Configuration</h3>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input
+                value={lpConfig.moduleName}
+                onChange={(e) => setLpConfig({...lpConfig, moduleName: e.target.value})}
+                className="mt-1 bg-background border-border"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Action</Label>
+              <Select
+                value={lpConfig.action}
+                onValueChange={(value: 'addLiquidity' | 'removeLiquidity') => setLpConfig({...lpConfig, action: value})}
+              >
+                <SelectTrigger className="mt-1 bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="addLiquidity">Add Liquidity</SelectItem>
+                  <SelectItem value="removeLiquidity">Remove Liquidity</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs text-muted-foreground">Token A</Label>
+                <Select
+                  value={lpConfig.tokenA}
+                  onValueChange={(value) => setLpConfig({...lpConfig, tokenA: value})}
+                >
+                  <SelectTrigger className="mt-1 bg-background border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SOL">SOL</SelectItem>
+                    <SelectItem value="RAY">RAY</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs text-muted-foreground">Token B</Label>
+                <Select
+                  value={lpConfig.tokenB}
+                  onValueChange={(value) => setLpConfig({...lpConfig, tokenB: value})}
+                >
+                  <SelectTrigger className="mt-1 bg-background border-border">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="USDC">USDC</SelectItem>
+                    <SelectItem value="USDT">USDT</SelectItem>
+                    <SelectItem value="SOL">SOL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {lpConfig.action === 'addLiquidity' ? (
+              <>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Amount {lpConfig.tokenA}</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={lpConfig.amountA}
+                    onChange={(e) => setLpConfig({...lpConfig, amountA: e.target.value})}
+                    className="mt-1 bg-background border-border"
+                    placeholder="0.0"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-xs text-muted-foreground">Amount {lpConfig.tokenB}</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={lpConfig.amountB}
+                    onChange={(e) => setLpConfig({...lpConfig, amountB: e.target.value})}
+                    className="mt-1 bg-background border-border"
+                    placeholder="0.0"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <Label className="text-xs text-muted-foreground">LP Token Amount</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={lpConfig.lpTokenAmount}
+                  onChange={(e) => setLpConfig({...lpConfig, lpTokenAmount: e.target.value})}
+                  className="mt-1 bg-background border-border"
+                  placeholder="0.0"
+                />
+              </div>
+            )}
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Slippage Tolerance</Label>
+              <div className="flex space-x-2 mt-1">
+                <Button
+                  variant={lpConfig.slippage === "0.5" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLpConfig({...lpConfig, slippage: "0.5"})}
+                  className={lpConfig.slippage === "0.5" ? "bg-primary bg-opacity-10 border border-primary text-primary" : "bg-dark-300 border-dark-100"}
+                >
+                  0.5%
+                </Button>
+                <Button
+                  variant={lpConfig.slippage === "1" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLpConfig({...lpConfig, slippage: "1"})}
+                  className={lpConfig.slippage === "1" ? "bg-primary bg-opacity-10 border border-primary text-primary" : "bg-dark-300 border-dark-100"}
+                >
+                  1%
+                </Button>
+                <Button
+                  variant={lpConfig.slippage === "3" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setLpConfig({...lpConfig, slippage: "3"})}
+                  className={lpConfig.slippage === "3" ? "bg-primary bg-opacity-10 border border-primary text-primary" : "bg-dark-300 border-dark-100"}
+                >
+                  3%
+                </Button>
+              </div>
+            </div>
+
+            <Card className="bg-muted p-3 text-xs">
+              <div className="flex justify-between mb-1">
+                <span className="text-muted-foreground">Pool:</span>
+                <span>{lpConfig.tokenA}/{lpConfig.tokenB}</span>
+              </div>
+              <div className="flex justify-between mb-1">
+                <span className="text-muted-foreground">Est. APR:</span>
+                <span>~24.5%</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Network:</span>
+                <span>Solana (Devnet mock)</span>
+              </div>
+            </Card>
+          </div>
+        </div>
+      );
+      break;
+
     default:
       configContent = <div>No configuration available for this module type</div>;
   }

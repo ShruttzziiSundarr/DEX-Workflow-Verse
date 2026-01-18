@@ -527,6 +527,154 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // === LIQUIDITY POOL ENDPOINTS ===
+
+  /**
+   * POST /api/liquidity
+   * Add or remove liquidity from a pool
+   * Request: { action, tokenA, tokenB, amountA, amountB, lpTokenAmount, slippage, fromPubkey }
+   * Response: { success, signature, lpTokensReceived, tokenAReceived, tokenBReceived, message }
+   */
+  app.post("/api/liquidity", async (req: Request, res: Response) => {
+    const { action, tokenA, tokenB, amountA, amountB, lpTokenAmount, slippage, fromPubkey } = req.body;
+    try {
+      const { handleLiquidityPool } = await import('../client/src/lib/solana/liquidityPool');
+      const { PublicKey } = await import('@solana/web3.js');
+
+      if (!fromPubkey) {
+        return res.status(400).json({ success: false, error: 'Wallet public key is required' });
+      }
+
+      const validActions = ['addLiquidity', 'removeLiquidity'];
+      if (!validActions.includes(action)) {
+        return res.status(400).json({ success: false, error: 'Invalid action. Must be addLiquidity or removeLiquidity' });
+      }
+
+      if (!tokenA || !tokenB) {
+        return res.status(400).json({ success: false, error: 'Token pair is required' });
+      }
+
+      if (action === 'addLiquidity' && (!amountA || !amountB)) {
+        return res.status(400).json({ success: false, error: 'Both token amounts are required for adding liquidity' });
+      }
+
+      if (action === 'removeLiquidity' && !lpTokenAmount) {
+        return res.status(400).json({ success: false, error: 'LP token amount is required for removing liquidity' });
+      }
+
+      const result = await handleLiquidityPool({
+        action,
+        tokenA,
+        tokenB,
+        amountA: amountA ? parseFloat(amountA) : undefined,
+        amountB: amountB ? parseFloat(amountB) : undefined,
+        lpTokenAmount: lpTokenAmount ? parseFloat(lpTokenAmount) : undefined,
+        slippage: parseFloat(slippage || '1'),
+        fromPubkey: new PublicKey(fromPubkey),
+      });
+
+      res.json({
+        success: result.success,
+        signature: result.signature,
+        lpTokensReceived: result.lpTokensReceived,
+        tokenAReceived: result.tokenAReceived,
+        tokenBReceived: result.tokenBReceived,
+        poolAddress: result.poolAddress,
+        mode: result.mode,
+        message: result.message,
+        action,
+        tokenA,
+        tokenB,
+      });
+    } catch (error) {
+      console.error('Liquidity pool operation error:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  /**
+   * GET /api/liquidity/pool/:tokenA/:tokenB
+   * Get pool information for a token pair
+   */
+  app.get("/api/liquidity/pool/:tokenA/:tokenB", async (req: Request, res: Response) => {
+    try {
+      const { getPoolInfo } = await import('../client/src/lib/solana/liquidityPool');
+      const { tokenA, tokenB } = req.params;
+
+      if (!tokenA || !tokenB) {
+        return res.status(400).json({ success: false, error: 'Token pair is required' });
+      }
+
+      const poolInfo = await getPoolInfo(tokenA, tokenB);
+
+      res.json({
+        success: true,
+        ...poolInfo,
+      });
+    } catch (error) {
+      console.error('Error fetching pool info:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  /**
+   * GET /api/liquidity/positions/:walletAddress
+   * Get user's LP positions
+   */
+  app.get("/api/liquidity/positions/:walletAddress", async (req: Request, res: Response) => {
+    try {
+      const { getUserLPPositions } = await import('../client/src/lib/solana/liquidityPool');
+      const { PublicKey } = await import('@solana/web3.js');
+
+      const walletAddress = req.params.walletAddress;
+      if (!walletAddress) {
+        return res.status(400).json({ success: false, error: 'Wallet address is required' });
+      }
+
+      const positions = await getUserLPPositions(new PublicKey(walletAddress));
+
+      res.json({
+        success: true,
+        positions,
+      });
+    } catch (error) {
+      console.error('Error fetching LP positions:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  /**
+   * GET /api/liquidity/pools
+   * Get available liquidity pools
+   */
+  app.get("/api/liquidity/pools", async (req: Request, res: Response) => {
+    try {
+      const { getAvailablePools } = await import('../client/src/lib/solana/liquidityPool');
+
+      const pools = getAvailablePools();
+
+      res.json({
+        success: true,
+        pools,
+      });
+    } catch (error) {
+      console.error('Error fetching available pools:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
   // Simulated Claim Rewards endpoint
   /**
    * POST /api/claim-rewards

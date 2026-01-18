@@ -21,12 +21,28 @@ const MODULES: ModuleInfo[] = [
     bgColor: "rgba(49, 101, 245, 0.2)",
   },
   {
-    type: "addLiquidity",
-    title: "Add Liquidity",
-    description: "Provide liquidity to pools",
+    type: "liquidityPool",
+    title: "Liquidity Pool",
+    description: "Add or remove liquidity",
     icon: "water_drop",
     color: "#06B6D4",
     bgColor: "rgba(6, 182, 212, 0.2)",
+  },
+  {
+    type: "addLiquidity",
+    title: "Add Liquidity",
+    description: "Provide liquidity to pools",
+    icon: "add_circle",
+    color: "#06B6D4",
+    bgColor: "rgba(6, 182, 212, 0.2)",
+  },
+  {
+    type: "removeLiquidity",
+    title: "Remove Liquidity",
+    description: "Withdraw from pools",
+    icon: "remove_circle",
+    color: "#EF4444",
+    bgColor: "rgba(239, 68, 68, 0.2)",
   },
   {
     type: "stake",
@@ -65,7 +81,7 @@ const MODULES: ModuleInfo[] = [
 const CATEGORIES = [
   {
     name: "Core Operations",
-    modules: ["swap", "addLiquidity", "stake", "claim"],
+    modules: ["swap", "liquidityPool", "addLiquidity", "removeLiquidity", "stake", "claim"],
   },
   {
     name: "Bitcoin Operations",

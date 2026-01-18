@@ -86,8 +86,10 @@ export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
 // Module types for workflow
 export const ModuleTypeEnum = z.enum([
   "swap",
+  "liquidityPool",
   "addLiquidity",
-  "stake", 
+  "removeLiquidity",
+  "stake",
   "claim",
   "bridge",
   "lightning"
@@ -102,6 +104,7 @@ export const ActionTypeEnum = z.enum([
   "emailSend",
   "defiSwap",
   "addLiquidity",
+  "removeLiquidity",
   "tokenTransfer"
 ]);
 
