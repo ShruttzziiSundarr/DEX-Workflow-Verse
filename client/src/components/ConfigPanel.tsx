@@ -70,10 +70,10 @@ export function ConfigPanel() {
   
   // State for different module configurations
   const [swapConfig, setSwapConfig] = useState<SwapConfig>({
-    moduleName: "Swap BTC to sBTC",
-    sourceToken: "BTC",
-    targetToken: "sBTC",
-    amount: "0.5",
+    moduleName: "Swap SOL to USDC",
+    sourceToken: "SOL",
+    targetToken: "USDC",
+    amount: "1.0",
     slippage: "1",
     useBestRoute: true,
   });
@@ -245,21 +245,23 @@ export function ConfigPanel() {
     switch (type) {
       case "swap":
         setSwapConfig({
-          moduleName: "Swap BTC to sBTC",
-          sourceToken: "BTC",
-          targetToken: "sBTC",
-          amount: "0.5",
+          moduleName: "Swap SOL to USDC",
+          sourceToken: "SOL",
+          targetToken: "USDC",
+          amount: "1.0",
           slippage: "1",
           useBestRoute: true,
         });
         break;
       case "stake":
         setStakeConfig({
-          moduleName: "Stake sBTC",
-          asset: "sBTC",
-          pool: "Yield Farm",
+          moduleName: "Stake SOL",
+          asset: "SOL",
+          pool: "Native Staking",
           lockPeriod: "30",
           autoCompound: true,
+          action: "delegate",
+          amount: "1.0",
         });
         break;
       case "claim":
@@ -354,20 +356,20 @@ export function ConfigPanel() {
             </div>
             <h3 className="text-base font-medium">Swap Configuration</h3>
           </div>
-          
+
           <div className="space-y-3">
             <div>
               <Label className="text-xs text-muted-foreground">Module Name</Label>
-              <Input 
-                value={swapConfig.moduleName} 
+              <Input
+                value={swapConfig.moduleName}
                 onChange={(e) => setSwapConfig({...swapConfig, moduleName: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
             </div>
-            
+
             <div>
               <Label className="text-xs text-muted-foreground">Source Token</Label>
-              <Select 
+              <Select
                 value={swapConfig.sourceToken}
                 onValueChange={(value) => setSwapConfig({...swapConfig, sourceToken: value})}
               >
@@ -375,16 +377,17 @@ export function ConfigPanel() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="BTC">BTC</SelectItem>
-                  <SelectItem value="ETH">ETH</SelectItem>
+                  <SelectItem value="SOL">SOL</SelectItem>
                   <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                  <SelectItem value="BONK">BONK</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            
+
             <div>
               <Label className="text-xs text-muted-foreground">Target Token</Label>
-              <Select 
+              <Select
                 value={swapConfig.targetToken}
                 onValueChange={(value) => setSwapConfig({...swapConfig, targetToken: value})}
               >
@@ -392,9 +395,10 @@ export function ConfigPanel() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sBTC">sBTC</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
                   <SelectItem value="USDT">USDT</SelectItem>
-                  <SelectItem value="DAI">DAI</SelectItem>
+                  <SelectItem value="SOL">SOL</SelectItem>
+                  <SelectItem value="BONK">BONK</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -472,11 +476,20 @@ export function ConfigPanel() {
             <Card className="bg-muted p-3 text-xs">
               <div className="flex justify-between mb-1">
                 <span className="text-muted-foreground">Estimated Output:</span>
-                <span>≈ {(parseFloat(swapConfig.amount) * 0.996).toFixed(3)} {swapConfig.targetToken}</span>
+                <span>≈ {(() => {
+                  const prices: Record<string, number> = { SOL: 150, USDC: 1, USDT: 1, BONK: 0.00001 };
+                  const rate = (prices[swapConfig.sourceToken] || 1) / (prices[swapConfig.targetToken] || 1);
+                  const output = parseFloat(swapConfig.amount || '0') * rate * 0.997;
+                  return output.toFixed(4);
+                })()} {swapConfig.targetToken}</span>
+              </div>
+              <div className="flex justify-between mb-1">
+                <span className="text-muted-foreground">Fee:</span>
+                <span>0.3%</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Fee:</span>
-                <span>{(parseFloat(swapConfig.amount) * 0.004).toFixed(3)} {swapConfig.sourceToken}</span>
+                <span className="text-muted-foreground">Network:</span>
+                <span>Solana Devnet (Mock)</span>
               </div>
             </Card>
           </div>

@@ -1,4 +1,6 @@
 import { Connection, VersionedTransaction, clusterApiUrl, PublicKey, Transaction } from "@solana/web3.js";
+import { executeMockSwap, getMockSwapQuote, type MockSwapResult } from './mockJupiterService';
+import { getDevnetTokenByAddress } from './jupiterDevnetUtils';
 
 const JUP_QUOTE_URL = "https://quote-api.jup.ag/v6/quote";
 const JUP_SWAP_URL = "https://quote-api.jup.ag/v6/swap";
@@ -10,20 +12,61 @@ function toBaseUnits(uiAmount: number, decimals: number) {
   return BigInt(Math.round(uiAmount * 10 ** decimals)).toString();
 }
 
-export async function jupiterSwap(params: {
+/**
+ * Get current cluster from environment
+ */
+function getCluster(): 'devnet' | 'mainnet-beta' {
+  const rpcUrl = typeof process !== 'undefined' ? (process.env?.VITE_SOLANA_RPC_URL || '') : '';
+  if (rpcUrl.includes('mainnet') || rpcUrl.includes('api.mainnet')) {
+    return 'mainnet-beta';
+  }
+  return 'devnet';
+}
+
+export interface SwapParams {
   inputMint: string;
   outputMint: string;
   uiAmount: number;
   inputDecimals: number;
+  outputDecimals?: number;
   slippageBps: number;
   userPublicKey: string;
-  destinationWallet?: string; // optional, defaults to userPublicKey
+  destinationWallet?: string;
   cluster?: 'devnet' | 'mainnet-beta';
-}) {
-  const { inputMint, outputMint, uiAmount, inputDecimals, slippageBps, userPublicKey, destinationWallet, cluster } = params;
+  forceMock?: boolean; // Force mock mode even on mainnet (for testing)
+}
 
-  const clusterParam = cluster || 'devnet';
-  const amount = toBaseUnits(uiAmount, inputDecimals);
+export interface SwapResult {
+  signature: string;
+  inputMint: string;
+  outputMint: string;
+  inputAmount: number;
+  outputAmount?: number;
+  mode: 'real' | 'mock';
+  message?: string;
+}
+
+/**
+ * Smart Jupiter swap function
+ * - Uses mock swap on devnet (Jupiter doesn't fully work there)
+ * - Uses real Jupiter on mainnet
+ */
+export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
+  const {
+    inputMint,
+    outputMint,
+    uiAmount,
+    inputDecimals,
+    outputDecimals,
+    slippageBps,
+    userPublicKey,
+    destinationWallet,
+    cluster,
+    forceMock
+  } = params;
+
+  const clusterParam = cluster || getCluster();
+
   console.debug('[jupiterSwap] request', {
     inputMint,
     outputMint,
@@ -33,27 +76,68 @@ export async function jupiterSwap(params: {
     userPublicKey,
     destinationWallet,
     cluster: clusterParam,
+    forceMock,
   });
-  const quoteUrl = `${JUP_QUOTE_URL}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}&swapMode=ExactIn&onlyDirectRoutes=false&cluster=${clusterParam}`;
+
+  // Use mock swap on devnet or if forced
+  if (clusterParam === 'devnet' || forceMock) {
+    console.log('[jupiterSwap] Using mock swap for devnet...');
+
+    // Get output decimals from token info if not provided
+    const outputToken = getDevnetTokenByAddress(outputMint);
+    const outDecimals = outputDecimals || outputToken?.decimals || 6;
+
+    try {
+      const result = await executeMockSwap({
+        inputMint,
+        outputMint,
+        uiAmount,
+        inputDecimals,
+        outputDecimals: outDecimals,
+        slippageBps,
+        userPublicKey,
+      });
+
+      return {
+        signature: result.signature,
+        inputMint: result.inputMint,
+        outputMint: result.outputMint,
+        inputAmount: result.inputAmount,
+        outputAmount: result.outputAmount,
+        mode: 'mock',
+        message: result.message,
+      };
+    } catch (error: any) {
+      console.error('[jupiterSwap] Mock swap failed:', error);
+      throw new Error(`Mock swap failed: ${error?.message || String(error)}`);
+    }
+  }
+
+  // Mainnet: Use real Jupiter API
+  console.log('[jupiterSwap] Using real Jupiter API for mainnet...');
+
+  const amount = toBaseUnits(uiAmount, inputDecimals);
+  const quoteUrl = `${JUP_QUOTE_URL}?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&slippageBps=${slippageBps}&swapMode=ExactIn&onlyDirectRoutes=false`;
+
   const quoteRes = await fetch(quoteUrl);
   if (!quoteRes.ok) {
     const errorText = await quoteRes.text();
     throw new Error(`Failed to fetch quote: ${errorText}`);
   }
+
   const quoteJson = await quoteRes.json();
   if (!quoteJson || !quoteJson.data || quoteJson.data.length === 0) {
     throw new Error("No routes found");
   }
+
   const route = quoteJson.data[0];
   console.debug('[jupiterSwap] selected route', { route });
 
   // Ensure destinationWallet is set (use userPublicKey as default)
   const destWallet = destinationWallet || userPublicKey;
 
-  // Request swap transaction from Jupiter REST API for the selected cluster
-  const swapUrl = `${JUP_SWAP_URL}?cluster=${clusterParam}`;
-
-  const swapRes = await fetch(swapUrl, {
+  // Request swap transaction from Jupiter REST API
+  const swapRes = await fetch(JUP_SWAP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -65,10 +149,12 @@ export async function jupiterSwap(params: {
       prioritizationFeeLamports: "auto",
     }),
   });
+
   if (!swapRes.ok) {
     const t = await swapRes.text();
     throw new Error(`Swap tx build failed: ${t}`);
   }
+
   const { swapTransaction } = await swapRes.json();
   console.debug('[jupiterSwap] received swapTransaction (base64 length)', swapTransaction?.length);
   if (!swapTransaction) throw new Error("No swapTransaction returned");
@@ -107,7 +193,15 @@ export async function jupiterSwap(params: {
 
   console.debug('[jupiterSwap] sent transaction signature', sig);
   await solanaConnection.confirmTransaction(sig, "confirmed");
-  return { signature: sig };
+
+  return {
+    signature: sig,
+    inputMint,
+    outputMint,
+    inputAmount: uiAmount,
+    mode: 'real',
+    message: `Swap completed successfully`,
+  };
 }
 
 // Common devnet mints (verified working tokens)

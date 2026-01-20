@@ -2,6 +2,9 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL, clusterApiUrl } from '@solana/
 
 type Cluster = 'mainnet-beta' | 'devnet';
 
+// Check if we're running in browser or server
+const isBrowser = typeof window !== 'undefined';
+
 interface LiquidityPoolParams {
   action: 'addLiquidity' | 'removeLiquidity';
   tokenA: string;           // Token A symbol (e.g., "SOL")
@@ -143,16 +146,20 @@ export async function handleLiquidityPool({
 }: LiquidityPoolParams): Promise<LiquidityResult> {
   const cluster = getCluster();
   const connection = getConnection(cluster);
-  const provider: any = (window as any)?.solana;
 
-  if (!provider?.isPhantom) {
-    throw new Error('Phantom wallet not available');
-  }
+  // Only check for wallet in browser environment
+  if (isBrowser) {
+    const provider: any = (window as any)?.solana;
 
-  // Check wallet connection
-  const isConnected = await provider.connect({ onlyIfTrusted: true }).catch(() => false);
-  if (!isConnected) {
-    throw new Error('Wallet not connected. Please connect your wallet and try again.');
+    if (!provider?.isPhantom) {
+      throw new Error('Phantom wallet not available');
+    }
+
+    // Check wallet connection
+    const isConnected = await provider.connect({ onlyIfTrusted: true }).catch(() => false);
+    if (!isConnected) {
+      throw new Error('Wallet not connected. Please connect your wallet and try again.');
+    }
   }
 
   // DEVNET: Mock liquidity pool operations
@@ -256,7 +263,10 @@ export async function handleLiquidityPool({
     console.log(`[LP][REAL] ${action} on mainnet using Raydium CPMM`);
 
     // Dynamically import Raydium SDK (only on mainnet)
-    const { Raydium } = await import('@raydium-io/raydium-sdk-v2');
+    // @ts-ignore - Raydium SDK may not be installed
+    const { Raydium } = await import('@raydium-io/raydium-sdk-v2').catch(() => {
+      throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
+    });
 
     // Initialize Raydium
     const raydium = await Raydium.load({
@@ -379,7 +389,10 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<PoolI
   // MAINNET: Fetch real pool info from Raydium
   try {
     const connection = getConnection(cluster);
-    const { Raydium } = await import('@raydium-io/raydium-sdk-v2');
+    // @ts-ignore - Raydium SDK may not be installed
+    const { Raydium } = await import('@raydium-io/raydium-sdk-v2').catch(() => {
+      throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
+    });
 
     const raydium = await Raydium.load({
       connection,
@@ -429,7 +442,10 @@ export async function getUserLPPositions(walletPubkey: PublicKey): Promise<UserL
   // MAINNET: Fetch real positions
   try {
     const connection = getConnection(cluster);
-    const { Raydium } = await import('@raydium-io/raydium-sdk-v2');
+    // @ts-ignore - Raydium SDK may not be installed
+    const { Raydium } = await import('@raydium-io/raydium-sdk-v2').catch(() => {
+      throw new Error('Raydium SDK not installed');
+    });
 
     const raydium = await Raydium.load({
       owner: walletPubkey,

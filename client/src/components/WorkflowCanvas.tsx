@@ -27,6 +27,7 @@ import { useWorkflow } from '@/hooks/use-workflow';
 import { Card } from '@/components/ui/card';
 import { jupiterSwap, addLiquidity } from '@/lib/solana/jupiterSwap';
 import { getTokenByAddress } from '@/lib/solana/tokenList';
+import { ExecutionHistory, addExecutionRecord, type ExecutionRecord } from './ExecutionHistory';
 
 const nodeTypes: NodeTypes = {
   workflowNode: WorkflowNode,
@@ -219,6 +220,11 @@ export function WorkflowCanvas() {
 
     setIsExecuting(true);
 
+    // Start tracking execution for history
+    const executionStartTime = Date.now();
+    const executionActions: ExecutionRecord['actions'] = [];
+    const executionId = `exec-${Date.now()}`;
+
     try {
       // Check wallet connection first
       if (!wallet?.isConnected) {
@@ -242,16 +248,16 @@ export function WorkflowCanvas() {
 
       // Check for disconnected nodes
       const connectedNodeIds = new Set<string>();
-      
+
       edges.forEach(edge => {
         connectedNodeIds.add(edge.source);
         connectedNodeIds.add(edge.target);
       });
-      
+
       // If there's only one node, it doesn't need connections
       if (nodes.length > 1) {
         const disconnectedNodes = nodes.filter(node => !connectedNodeIds.has(node.id));
-        
+
         if (disconnectedNodes.length > 0) {
           toast({
             title: 'Cannot Execute',
@@ -277,84 +283,161 @@ export function WorkflowCanvas() {
 
       const userPublicKey = provider.publicKey.toString();
 
-      // Find and execute Jupiter Swap if present
-      const swapNode = nodes.find(n => n.data?.type === 'jupiterSwap');
+      // Find and execute Swap if present (supports both 'swap' and 'jupiterSwap' types)
+      const swapNode = nodes.find(n => n.data?.type === 'swap' || n.data?.type === 'jupiterSwap');
       if (swapNode) {
         const cfg = (swapNode.data?.config || {}) as any;
-        const uiAmount = parseFloat(cfg.amount || '0.05');
-        const slippageBps = parseInt(cfg.slippageBps || '50');
-        
-        const inputMint = cfg.inputToken;
-        const outputMint = cfg.outputToken;
-        
-        if (!inputMint || !outputMint) {
-          toast({ title: 'Invalid Swap Configuration', description: 'Please select both input and output tokens.', variant: 'destructive' });
+
+        // Get token symbols from config (support both old mint-based and new symbol-based config)
+        const sourceToken = cfg.sourceToken || cfg.inputSymbol || 'SOL';
+        const targetToken = cfg.targetToken || cfg.outputSymbol || 'USDC';
+
+        // Map token symbols to devnet mints
+        const TOKEN_TO_MINT: Record<string, string> = {
+          'SOL': 'So11111111111111111111111111111111111111112',
+          'USDC': '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+          'USDT': 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',
+          'BONK': 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        };
+
+        const TOKEN_DECIMALS: Record<string, number> = {
+          'SOL': 9,
+          'USDC': 6,
+          'USDT': 6,
+          'BONK': 5,
+        };
+
+        const inputMint = cfg.inputToken || TOKEN_TO_MINT[sourceToken] || TOKEN_TO_MINT['SOL'];
+        const outputMint = cfg.outputToken || TOKEN_TO_MINT[targetToken] || TOKEN_TO_MINT['USDC'];
+
+        const uiAmount = parseFloat(cfg.amount || '1.0');
+        const slippageBps = parseInt(cfg.slippageBps || String(parseFloat(cfg.slippage || '1') * 100));
+
+        const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
+        const outputDecimals = TOKEN_DECIMALS[targetToken] || 6;
+
+        toast({ title: 'Executing Swap...', description: `Swapping ${uiAmount} ${sourceToken} -> ${targetToken} (devnet mock)` });
+
+        try {
+          const result = await jupiterSwap({
+            inputMint,
+            outputMint,
+            uiAmount,
+            inputDecimals,
+            outputDecimals,
+            slippageBps,
+            userPublicKey,
+            destinationWallet: userPublicKey,
+            cluster: 'devnet',
+          });
+
+          toast({
+            title: 'Swap Completed',
+            description: result.message || `Swapped ${uiAmount} ${sourceToken} for ~${result.outputAmount?.toFixed(4) || '?'} ${targetToken}`,
+          });
+
+          console.log('[Swap] Result:', result);
+
+          // Record swap action in history
+          executionActions.push({
+            type: 'swap',
+            status: 'success',
+            message: `Swapped ${uiAmount} ${sourceToken} for ~${result.outputAmount?.toFixed(4) || '?'} ${targetToken}`,
+            signature: result.signature,
+            details: {
+              inputToken: sourceToken,
+              outputToken: targetToken,
+              inputAmount: uiAmount,
+              outputAmount: result.outputAmount?.toFixed(4),
+              mode: result.mode,
+            },
+          });
+        } catch (swapError: any) {
+          console.error('Swap execution error:', swapError);
+          toast({
+            title: 'Swap Failed',
+            description: swapError.message || 'Unknown error during swap',
+            variant: 'destructive',
+          });
+
+          // Record failed swap action
+          executionActions.push({
+            type: 'swap',
+            status: 'failed',
+            message: swapError.message || 'Unknown error during swap',
+          });
           return;
         }
-        
-        const inputTokenInfo = getTokenByAddress(inputMint);
-        const inputDecimals = inputTokenInfo?.decimals || 9;
-        const inputSymbol = inputTokenInfo?.symbol || 'Token';
-        const outputTokenInfo = getTokenByAddress(outputMint);
-        const outputSymbol = outputTokenInfo?.symbol || 'Token';
-
-        toast({ title: 'Executing Swap...', description: `Swapping ${uiAmount} ${inputSymbol} -> ${outputSymbol} (devnet)` });
-        const { signature } = await jupiterSwap({
-          inputMint,
-          outputMint,
-          uiAmount,
-          inputDecimals,
-          slippageBps,
-          userPublicKey,
-          destinationWallet: userPublicKey,
-          cluster: 'devnet',
-        });
-      
-        toast({
-          title: 'Swap Confirmed',
-          description: `Signature: ${signature.slice(0, 8)}... View in explorer`,
-        });
       }
 
-      // Find and execute Add Liquidity if present
-      const liquidityNode = nodes.find(n => n.data?.type === 'addLiquidity');
+      // Find and execute Add Liquidity if present (supports multiple LP types)
+      const liquidityNode = nodes.find(n =>
+        n.data?.type === 'addLiquidity' ||
+        n.data?.type === 'liquidityPool' ||
+        n.data?.type === 'removeLiquidity'
+      );
       if (liquidityNode) {
         const cfg = (liquidityNode.data?.config || {}) as any;
-        const amountA = parseFloat(cfg.amountA || '0.1');
-        const amountB = parseFloat(cfg.amountB || '10');
-        const slippageBps = parseInt(cfg.slippageBps || '50');
-        
-        const tokenAMint = cfg.tokenA;
-        const tokenBMint = cfg.tokenB;
-        
-        if (!tokenAMint || !tokenBMint) {
-          toast({ title: 'Invalid Liquidity Configuration', description: 'Please select both tokens for liquidity.', variant: 'destructive' });
+        const nodeType = liquidityNode.data?.type;
+
+        // Determine action based on node type or config
+        const lpAction = cfg.action || (nodeType === 'removeLiquidity' ? 'removeLiquidity' : 'addLiquidity');
+
+        // Get token symbols (support both symbol-based and mint-based config)
+        const tokenA = cfg.tokenA || 'SOL';
+        const tokenB = cfg.tokenB || 'USDC';
+        const amountA = parseFloat(cfg.amountA || '1.0');
+        const amountB = parseFloat(cfg.amountB || '150.0');
+        const lpTokenAmount = parseFloat(cfg.lpTokenAmount || '10');
+        const slippage = parseFloat(cfg.slippage || '1');
+
+        try {
+          // Import the LP module
+          const { handleLiquidityPool } = await import('../lib/solana/liquidityPool');
+
+          if (lpAction === 'addLiquidity') {
+            toast({ title: 'Adding Liquidity...', description: `Adding ${amountA} ${tokenA} + ${amountB} ${tokenB} to pool (devnet mock)` });
+
+            const result = await handleLiquidityPool({
+              action: 'addLiquidity',
+              tokenA,
+              tokenB,
+              amountA,
+              amountB,
+              slippage,
+              fromPubkey: new PublicKey(userPublicKey),
+            });
+
+            toast({
+              title: 'Liquidity Added',
+              description: result.message || `Received ${result.lpTokensReceived?.toFixed(4)} LP tokens`,
+            });
+          } else {
+            toast({ title: 'Removing Liquidity...', description: `Removing ${lpTokenAmount} LP tokens from ${tokenA}/${tokenB} pool (devnet mock)` });
+
+            const result = await handleLiquidityPool({
+              action: 'removeLiquidity',
+              tokenA,
+              tokenB,
+              lpTokenAmount,
+              slippage,
+              fromPubkey: new PublicKey(userPublicKey),
+            });
+
+            toast({
+              title: 'Liquidity Removed',
+              description: result.message || `Received ${result.tokenAReceived?.toFixed(4)} ${tokenA} + ${result.tokenBReceived?.toFixed(4)} ${tokenB}`,
+            });
+          }
+        } catch (lpError: any) {
+          console.error('Liquidity operation error:', lpError);
+          toast({
+            title: 'Liquidity Operation Failed',
+            description: lpError.message || 'Unknown error during liquidity operation',
+            variant: 'destructive',
+          });
           return;
         }
-        
-        const tokenAInfo = getTokenByAddress(tokenAMint);
-        const tokenBInfo = getTokenByAddress(tokenBMint);
-        const tokenADecimals = tokenAInfo?.decimals || 9;
-        const tokenBDecimals = tokenBInfo?.decimals || 6;
-        const tokenASymbol = tokenAInfo?.symbol || 'TokenA';
-        const tokenBSymbol = tokenBInfo?.symbol || 'TokenB';
-
-        toast({ title: 'Adding Liquidity...', description: `Adding ${amountA} ${tokenASymbol} + ${amountB} ${tokenBSymbol} to pool (devnet)` });
-        const result = await addLiquidity({
-          tokenAMint,
-          tokenBMint,
-          amountA,
-          amountB,
-          tokenADecimals,
-          tokenBDecimals,
-          slippageBps,
-          userPublicKey,
-        });
-      
-        toast({
-          title: 'Liquidity Added',
-          description: `Pool: ${result.poolId}, LP Amount: ${result.liquidityAmount}`,
-        });
       }
 
       // Find and execute Marinade Staking if present
@@ -403,10 +486,23 @@ export function WorkflowCanvas() {
             fromPubkey: new PublicKey(userPublicKey),
             stakeAccountPubkey: marinadeAction === 'unstake' ? stakeAccountPubkey : undefined,
           });
-        
+
           toast({
             title: 'Marinade Stake Transaction Confirmed',
             description: `Signature: ${signature.slice(0, 8)}... View in explorer`,
+          });
+
+          // Record stake action in history
+          executionActions.push({
+            type: 'stake',
+            status: 'success',
+            message: `${marinadeAction === 'stake' ? 'Staked' : 'Unstaked'} ${marinadeAction === 'stake' ? amount : ''} SOL`,
+            signature,
+            details: {
+              action: marinadeAction,
+              amount: marinadeAction === 'stake' ? amount : undefined,
+              validator: validatorPubkey || 'Auto-selected',
+            },
           });
         } catch (error: any) {
           console.error('Marinade staking error:', error);
@@ -415,19 +511,55 @@ export function WorkflowCanvas() {
             description: error.message || 'Unexpected error',
             variant: 'destructive',
           });
+
+          // Record failed stake action
+          executionActions.push({
+            type: 'stake',
+            status: 'failed',
+            message: error.message || 'Unexpected error',
+          });
           return;
         }
       }
 
       // If no executable nodes found
-      if (!swapNode && !liquidityNode && !stakeNode) {
+      const hasExecutableNode = swapNode || liquidityNode || stakeNode;
+      if (!hasExecutableNode) {
         toast({ title: 'No Executable Actions', description: 'Add Swap, Add Liquidity, or Stake modules to execute.', variant: 'destructive' });
         return;
       }
 
+      // Show success message for workflow completion
+      toast({
+        title: 'Workflow Completed',
+        description: 'All workflow actions have been executed successfully!',
+      });
+
+      // Record successful workflow execution in history
+      const executionDuration = Date.now() - executionStartTime;
+      addExecutionRecord({
+        id: executionId,
+        timestamp: new Date(),
+        workflowName: `Workflow (${nodes.length} nodes)`,
+        status: 'success',
+        actions: executionActions,
+        totalDuration: executionDuration,
+      });
+
     } catch (err: any) {
       console.error(err);
       toast({ title: 'Execution Failed', description: String(err?.message || err), variant: 'destructive' });
+
+      // Record failed workflow execution
+      const executionDuration = Date.now() - executionStartTime;
+      addExecutionRecord({
+        id: executionId,
+        timestamp: new Date(),
+        workflowName: `Workflow (${nodes.length} nodes)`,
+        status: 'failed',
+        actions: executionActions,
+        totalDuration: executionDuration,
+      });
     } finally {
       setIsExecuting(false);
     }
@@ -587,6 +719,9 @@ export function WorkflowCanvas() {
           </Button>
         </div>
       </div>
+
+      {/* Execution History Panel */}
+      <ExecutionHistory />
     </div>
   );
 }
