@@ -836,6 +836,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // === LIGHTNING NETWORK ENDPOINT ===
+
+  /**
+   * POST /api/lightning/pay
+   * Simulates a Lightning Network payment with realistic routing.
+   * Body: { recipient, amountSats, memo? }
+   * Response: { success, paymentHash, preimage, route, totalFeeSats, amountSats, recipient, memo, message }
+   */
+  app.post("/api/lightning/pay", async (req: Request, res: Response) => {
+    const { recipient, amountSats, memo } = req.body;
+
+    if (!recipient || typeof recipient !== 'string' || recipient.trim() === '') {
+      return res.status(400).json({ message: 'Recipient (Lightning address or BOLT11 invoice) is required' });
+    }
+
+    const amount = Number(amountSats);
+    if (!amount || amount <= 0 || !Number.isFinite(amount)) {
+      return res.status(400).json({ message: 'amountSats must be a positive integer (satoshis)' });
+    }
+
+    // Simulate network latency for payment routing (600–1200ms)
+    await new Promise(resolve => setTimeout(resolve, 600 + Math.floor(Math.random() * 600)));
+
+    // Helper: generate random hex string of given byte length
+    const randomHex = (bytes: number) =>
+      Array.from({ length: bytes }, () =>
+        Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
+      ).join('');
+
+    // Generate payment preimage (32-byte secret) and hash (payment identifier)
+    const preimage = randomHex(32);
+    const paymentHash = randomHex(32);
+
+    // Simulate 2–3 routing hops through the Lightning Network
+    const numHops = Math.floor(Math.random() * 2) + 2;
+    const route = Array.from({ length: numHops }, (_, i) => {
+      // Last hop (destination) has zero fee
+      const feeSats = i < numHops - 1 ? Math.max(1, Math.floor(amount * 0.0005) + 1) : 0;
+      return {
+        nodeId: `02${randomHex(32)}`.slice(0, 66),
+        channelId: `${Math.floor(Math.random() * 800000) + 100000}x${Math.floor(Math.random() * 900) + 100}x${Math.floor(Math.random() * 9) + 1}`,
+        feeSats,
+        cltvDelta: 40 + (numHops - i) * 10,
+      };
+    });
+
+    const totalFeeSats = route.reduce((sum, hop) => sum + hop.feeSats, 0);
+
+    return res.json({
+      success: true,
+      paymentHash,
+      preimage,
+      route,
+      totalFeeSats,
+      amountSats: amount,
+      recipient: recipient.trim(),
+      memo: memo || '',
+      message: `Payment of ${amount} sats sent to ${recipient.trim()} via ${numHops} hops (fee: ${totalFeeSats} sats)`,
+    });
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
@@ -1080,15 +1141,41 @@ async function executeNode(node: any, walletAddress?: string, previousResults?: 
 
     case 'lightning': {
       const { recipient, amount, memo } = config;
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const recipientAddr = recipient || 'lightning@example.com';
+      const amountBtc = parseFloat(amount || '0.001');
+      const amountSats = Math.floor(amountBtc * 100_000_000);
+
+      await new Promise(resolve => setTimeout(resolve, 600 + Math.floor(Math.random() * 600)));
+
+      const randomHex = (bytes: number) =>
+        Array.from({ length: bytes }, () =>
+          Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
+        ).join('');
+
+      const preimage = randomHex(32);
+      const paymentHash = randomHex(32);
+      const numHops = Math.floor(Math.random() * 2) + 2;
+      const route = Array.from({ length: numHops }, (_, i) => ({
+        nodeId: `02${randomHex(32)}`.slice(0, 66),
+        channelId: `${Math.floor(Math.random() * 800000) + 100000}x${Math.floor(Math.random() * 900) + 100}x${Math.floor(Math.random() * 9) + 1}`,
+        feeSats: i < numHops - 1 ? Math.max(1, Math.floor(amountSats * 0.0005) + 1) : 0,
+        cltvDelta: 40 + (numHops - i) * 10,
+      }));
+      const totalFeeSats = route.reduce((sum, hop) => sum + hop.feeSats, 0);
+
       return {
         success: true,
         result: {
-          recipient: recipient || 'lightning@example.com',
-          amount: amount || '0.01',
+          recipient: recipientAddr,
+          amountSats,
+          totalFeeSats,
+          numHops,
+          paymentHash,
+          preimage,
+          route,
           memo: memo || '',
         },
-        message: `Sent ${amount || '0.01'} BTC via Lightning to ${recipient || 'lightning@example.com'}`
+        message: `Payment of ${amountSats} sats sent to ${recipientAddr} via ${numHops} hops (fee: ${totalFeeSats} sats)`,
       };
     }
 

@@ -522,8 +522,64 @@ export function WorkflowCanvas() {
         }
       }
 
+      // Find and execute Instant SOL Transfer (Lightning module) if present
+      const lightningNode = nodes.find(n => n.data?.type === 'lightning');
+      if (lightningNode) {
+        const cfg = (lightningNode.data?.config || {}) as any;
+        const recipient = (cfg.recipient || '').trim();
+        const amountSol = parseFloat(cfg.amount || '0');
+
+        if (!recipient) {
+          toast({ title: 'Invalid Transfer Config', description: 'Please enter a recipient Solana wallet address.', variant: 'destructive' });
+          return;
+        }
+        if (isNaN(amountSol) || amountSol <= 0) {
+          toast({ title: 'Invalid Transfer Amount', description: 'Please enter a valid SOL amount.', variant: 'destructive' });
+          return;
+        }
+
+        toast({ title: 'Sending SOL Transfer...', description: `Sending ${amountSol} SOL to ${recipient.slice(0, 8)}...` });
+
+        try {
+          const { Connection, SystemProgram, Transaction, PublicKey, LAMPORTS_PER_SOL, clusterApiUrl } = await import('@solana/web3.js');
+          const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+          const fromPubkey = new PublicKey(userPublicKey);
+          const toPubkey = new PublicKey(recipient);
+          const lamports = Math.floor(amountSol * LAMPORTS_PER_SOL);
+
+          const { blockhash } = await connection.getLatestBlockhash();
+          const tx = new Transaction().add(
+            SystemProgram.transfer({ fromPubkey, toPubkey, lamports })
+          );
+          tx.recentBlockhash = blockhash;
+          tx.feePayer = fromPubkey;
+
+          const signed = await provider.signTransaction(tx);
+          const signature = await connection.sendRawTransaction(signed.serialize());
+          await connection.confirmTransaction(signature, 'confirmed');
+
+          toast({
+            title: 'SOL Transfer Confirmed',
+            description: `Sent ${amountSol} SOL to ${recipient.slice(0, 8)}... | Sig: ${signature.slice(0, 8)}...`,
+          });
+
+          executionActions.push({
+            type: 'lightning',
+            status: 'success',
+            message: `Sent ${amountSol} SOL to ${recipient}`,
+            signature,
+            details: { recipient, amountSol, lamports },
+          });
+        } catch (err: any) {
+          console.error('SOL transfer error:', err);
+          toast({ title: 'SOL Transfer Failed', description: err.message || 'Unknown error', variant: 'destructive' });
+          executionActions.push({ type: 'lightning', status: 'failed', message: err.message || 'Unknown error' });
+          return;
+        }
+      }
+
       // If no executable nodes found
-      const hasExecutableNode = swapNode || liquidityNode || stakeNode;
+      const hasExecutableNode = swapNode || liquidityNode || stakeNode || lightningNode;
       if (!hasExecutableNode) {
         toast({ title: 'No Executable Actions', description: 'Add Swap, Add Liquidity, or Stake modules to execute.', variant: 'destructive' });
         return;

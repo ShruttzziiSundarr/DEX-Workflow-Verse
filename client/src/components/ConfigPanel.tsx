@@ -771,41 +771,57 @@ export function ConfigPanel() {
             </div>
 
             <div>
-              <Label className="text-xs text-muted-foreground">Recipient</Label>
+              <Label className="text-xs text-muted-foreground">Recipient Wallet (Solana Address)</Label>
               <Input
                 value={lightningConfig.recipient}
                 onChange={(e) => setLightningConfig({...lightningConfig, recipient: e.target.value})}
-                className="mt-1 bg-background border-border"
+                className="mt-1 bg-background border-border font-mono text-xs"
+                placeholder="e.g. 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
               />
             </div>
 
             <div>
-              <Label className="text-xs text-muted-foreground">Amount</Label>
+              <Label className="text-xs text-muted-foreground">Amount (SOL)</Label>
               <Input
                 type="text"
                 value={lightningConfig.amount}
                 onChange={(e) => setLightningConfig({...lightningConfig, amount: e.target.value})}
                 className="mt-1 bg-background border-border"
+                placeholder="e.g. 0.001"
               />
+              {lightningConfig.amount && !isNaN(parseFloat(lightningConfig.amount)) && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  ≈ {Math.floor(parseFloat(lightningConfig.amount) * 1_000_000_000).toLocaleString()} lamports
+                </p>
+              )}
             </div>
 
             <div>
-              <Label className="text-xs text-muted-foreground">Memo</Label>
+              <Label className="text-xs text-muted-foreground">Memo (optional)</Label>
               <Input
                 value={lightningConfig.memo}
                 onChange={(e) => setLightningConfig({...lightningConfig, memo: e.target.value})}
                 className="mt-1 bg-background border-border"
+                placeholder="Payment description"
               />
             </div>
 
-            <Card className="bg-muted p-3 text-xs">
-              <div className="flex justify-between mb-1">
-                <span className="text-muted-foreground">Speed:</span>
-                <span>Instant</span>
+            <Card className="bg-muted p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Network:</span>
+                <span>Solana Devnet</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Fee:</span>
-                <span>~1 sat</span>
+                <span className="text-muted-foreground">Speed:</span>
+                <span>Instant (~400ms)</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Type:</span>
+                <span>SOL Transfer</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Est. Fee:</span>
+                <span>~0.000005 SOL</span>
               </div>
             </Card>
           </div>
