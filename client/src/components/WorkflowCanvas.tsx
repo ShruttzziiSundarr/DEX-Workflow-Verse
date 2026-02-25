@@ -412,6 +412,21 @@ export function WorkflowCanvas() {
               title: 'Liquidity Added',
               description: result.message || `Received ${result.lpTokensReceived?.toFixed(4)} LP tokens`,
             });
+
+            executionActions.push({
+              type: 'addLiquidity',
+              status: 'success',
+              message: result.message || `Added ${amountA} ${tokenA} + ${amountB} ${tokenB} to pool`,
+              details: {
+                tokenA,
+                tokenB,
+                amountA,
+                amountB,
+                lpTokensReceived: result.lpTokensReceived,
+                poolAddress: result.poolAddress,
+                mode: result.mode,
+              },
+            });
           } else {
             toast({ title: 'Removing Liquidity...', description: `Removing ${lpTokenAmount} LP tokens from ${tokenA}/${tokenB} pool (devnet mock)` });
 
@@ -428,6 +443,21 @@ export function WorkflowCanvas() {
               title: 'Liquidity Removed',
               description: result.message || `Received ${result.tokenAReceived?.toFixed(4)} ${tokenA} + ${result.tokenBReceived?.toFixed(4)} ${tokenB}`,
             });
+
+            executionActions.push({
+              type: 'removeLiquidity',
+              status: 'success',
+              message: result.message || `Removed ${lpTokenAmount} LP tokens from ${tokenA}/${tokenB} pool`,
+              details: {
+                tokenA,
+                tokenB,
+                lpTokenAmount,
+                tokenAReceived: result.tokenAReceived,
+                tokenBReceived: result.tokenBReceived,
+                poolAddress: result.poolAddress,
+                mode: result.mode,
+              },
+            });
           }
         } catch (lpError: any) {
           console.error('Liquidity operation error:', lpError);
@@ -435,6 +465,11 @@ export function WorkflowCanvas() {
             title: 'Liquidity Operation Failed',
             description: lpError.message || 'Unknown error during liquidity operation',
             variant: 'destructive',
+          });
+          executionActions.push({
+            type: lpAction as 'addLiquidity' | 'removeLiquidity',
+            status: 'failed',
+            message: lpError.message || 'Unknown error during liquidity operation',
           });
           return;
         }
@@ -530,7 +565,13 @@ export function WorkflowCanvas() {
         const amountSol = parseFloat(cfg.amount || '0');
 
         if (!recipient) {
-          toast({ title: 'Invalid Transfer Config', description: 'Please enter a recipient Solana wallet address.', variant: 'destructive' });
+          toast({ title: 'Missing Recipient', description: 'Please enter a Solana wallet address in the Lightning module config.', variant: 'destructive' });
+          return;
+        }
+        // Validate it looks like a base58 Solana address before touching web3.js
+        const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+        if (!base58Regex.test(recipient)) {
+          toast({ title: 'Invalid Solana Address', description: `"${recipient.slice(0, 20)}..." is not a valid Solana wallet address. Copy your address from Phantom.`, variant: 'destructive' });
           return;
         }
         if (isNaN(amountSol) || amountSol <= 0) {

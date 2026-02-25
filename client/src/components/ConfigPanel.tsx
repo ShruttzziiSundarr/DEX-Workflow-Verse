@@ -9,6 +9,16 @@ import { ValidatorSelector } from "@/components/ValidatorSelector";
 import { useWorkflow } from "@/hooks/use-workflow";
 import { useToast } from "@/hooks/use-toast";
 import { ModuleType } from "@shared/schema";
+import { estimateLPTokens, getUserPositionsFromStorage } from "@/lib/solana/liquidityPool";
+
+const POOL_INFO: Record<string, { apr: number; fee: number }> = {
+  'SOL/USDC': { apr: 24.5, fee: 0.25 },
+  'SOL/USDT': { apr: 18.2, fee: 0.25 },
+  'RAY/SOL': { apr: 32.1, fee: 0.25 },
+  'USDC/SOL': { apr: 24.5, fee: 0.25 },
+  'USDT/SOL': { apr: 18.2, fee: 0.25 },
+  'SOL/RAY': { apr: 32.1, fee: 0.25 },
+};
 
 type CommonConfig = {
   moduleName: string;
@@ -104,7 +114,7 @@ export function ConfigPanel() {
   
   const [lightningConfig, setLightningConfig] = useState<LightningConfig>({
     moduleName: "Lightning Payment",
-    recipient: "lightning@example.com",
+    recipient: "",
     amount: "0.01",
     memo: "Payment for services",
   });
@@ -283,7 +293,7 @@ export function ConfigPanel() {
       case "lightning":
         setLightningConfig({
           moduleName: "Lightning Payment",
-          recipient: "lightning@example.com",
+          recipient: "",
           amount: "0.01",
           memo: "Payment for services",
         });
@@ -972,20 +982,71 @@ export function ConfigPanel() {
               </div>
             </div>
 
-            <Card className="bg-muted p-3 text-xs">
-              <div className="flex justify-between mb-1">
-                <span className="text-muted-foreground">Pool:</span>
-                <span>{lpConfig.tokenA}/{lpConfig.tokenB}</span>
-              </div>
-              <div className="flex justify-between mb-1">
-                <span className="text-muted-foreground">Est. APR:</span>
-                <span>~24.5%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Network:</span>
-                <span>Solana (Devnet mock)</span>
-              </div>
-            </Card>
+            {(() => {
+              const poolKey = `${lpConfig.tokenA}/${lpConfig.tokenB}`;
+              const poolMeta = POOL_INFO[poolKey] || { apr: 0, fee: 0.25 };
+              const lpEstimate = lpConfig.action === 'addLiquidity' &&
+                lpConfig.amountA && lpConfig.amountB &&
+                parseFloat(lpConfig.amountA) > 0 && parseFloat(lpConfig.amountB) > 0
+                ? estimateLPTokens(parseFloat(lpConfig.amountA), parseFloat(lpConfig.amountB), lpConfig.tokenA, lpConfig.tokenB)
+                : null;
+              const walletStr = typeof window !== 'undefined' ? localStorage.getItem('wallet') : null;
+              const walletAddress = walletStr ? JSON.parse(walletStr)?.address : null;
+              const userPositions = walletAddress ? getUserPositionsFromStorage(walletAddress) : [];
+              const userPosition = userPositions.find(p =>
+                p.poolAddress.includes(lpConfig.tokenA) && p.poolAddress.includes(lpConfig.tokenB)
+              ) || userPositions.find(p =>
+                p.poolAddress === 'MockPool11111111111111111111111111111111111' && poolKey === 'SOL/USDC'
+              ) || userPositions.find(p =>
+                p.poolAddress === 'MockPool22222222222222222222222222222222222' && (poolKey === 'SOL/USDT' || poolKey === 'USDT/SOL')
+              ) || userPositions.find(p =>
+                p.poolAddress === 'MockPool33333333333333333333333333333333333' && (poolKey === 'RAY/SOL' || poolKey === 'SOL/RAY')
+              );
+              return (
+                <Card className="bg-muted p-3 text-xs space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Pool:</span>
+                    <span className="font-medium">{lpConfig.tokenA}/{lpConfig.tokenB}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">APR:</span>
+                    <span className="text-green-400">{poolMeta.apr > 0 ? `~${poolMeta.apr}%` : 'N/A'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Fee:</span>
+                    <span>{poolMeta.fee}%</span>
+                  </div>
+                  {lpEstimate && (
+                    <div className="flex justify-between border-t border-border pt-1 mt-1">
+                      <span className="text-muted-foreground">Est. LP tokens:</span>
+                      <span className="font-medium">{lpEstimate.lpTokens.toFixed(4)}</span>
+                    </div>
+                  )}
+                  {lpEstimate && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Pool share:</span>
+                      <span>{lpEstimate.sharePercent.toFixed(4)}%</span>
+                    </div>
+                  )}
+                  {userPosition && (
+                    <div className="flex justify-between border-t border-border pt-1 mt-1">
+                      <span className="text-muted-foreground">Your LP balance:</span>
+                      <span className="text-cyan-400 font-medium">{userPosition.lpBalance.toFixed(4)}</span>
+                    </div>
+                  )}
+                  {userPosition && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Your share:</span>
+                      <span>{userPosition.sharePercentage.toFixed(4)}%</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t border-border pt-1 mt-1">
+                    <span className="text-muted-foreground">Network:</span>
+                    <span>Solana Devnet</span>
+                  </div>
+                </Card>
+              );
+            })()}
           </div>
         </div>
       );

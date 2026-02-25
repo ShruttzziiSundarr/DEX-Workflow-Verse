@@ -1,5 +1,8 @@
 import { Connection, PublicKey, LAMPORTS_PER_SOL, clusterApiUrl } from '@solana/web3.js';
 
+// Use a variable so Vite does not statically trace the optional mainnet-only dependency
+const RAYDIUM_PKG = '@raydium-io/raydium-sdk-v2';
+
 type Cluster = 'mainnet-beta' | 'devnet';
 
 // Check if we're running in browser or server
@@ -86,8 +89,30 @@ const MOCK_POOLS: Record<string, PoolInfo> = {
   },
 };
 
-// Mock user LP positions for devnet
-const mockUserPositions = new Map<string, UserLPPosition[]>();
+// LP positions persisted in localStorage so they survive page refreshes
+const LP_POSITIONS_KEY = 'dex_lp_positions';
+
+function loadStoredPositions(): Record<string, UserLPPosition[]> {
+  try {
+    if (typeof window === 'undefined') return {};
+    const stored = localStorage.getItem(LP_POSITIONS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredPositions(positions: Record<string, UserLPPosition[]>) {
+  try {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(LP_POSITIONS_KEY, JSON.stringify(positions));
+  } catch {}
+}
+
+/** Synchronously read a user's LP positions from localStorage (used by UI components) */
+export function getUserPositionsFromStorage(walletAddress: string): UserLPPosition[] {
+  return loadStoredPositions()[walletAddress] || [];
+}
 
 /**
  * Get the current cluster from environment
@@ -189,14 +214,18 @@ export async function handleLiquidityPool({
       const lpTokensReceived = calculateLPTokens(amountA, amountB, pool);
       const slippageAdjusted = lpTokensReceived * (1 - slippage / 100);
 
-      // Update mock user positions
+      // Persist LP position to localStorage
       const userKey = fromPubkey.toBase58();
-      const existingPositions = mockUserPositions.get(userKey) || [];
+      const allPositions = loadStoredPositions();
+      const existingPositions = allPositions[userKey] || [];
       const existingPosition = existingPositions.find(p => p.poolAddress === pool.poolAddress);
 
       if (existingPosition) {
         existingPosition.lpBalance += slippageAdjusted;
         existingPosition.sharePercentage = (existingPosition.lpBalance / (pool.lpSupply + slippageAdjusted)) * 100;
+        existingPosition.tokenAValue += amountA;
+        existingPosition.tokenBValue += amountB;
+        existingPosition.valueUSD = existingPosition.tokenBValue * 2;
       } else {
         existingPositions.push({
           poolAddress: pool.poolAddress,
@@ -204,10 +233,11 @@ export async function handleLiquidityPool({
           sharePercentage: (slippageAdjusted / (pool.lpSupply + slippageAdjusted)) * 100,
           tokenAValue: amountA,
           tokenBValue: amountB,
-          valueUSD: amountB * 2, // Mock USD value
+          valueUSD: amountB * 2,
         });
       }
-      mockUserPositions.set(userKey, existingPositions);
+      allPositions[userKey] = existingPositions;
+      saveStoredPositions(allPositions);
 
       console.log(`[LP][MOCK] Added liquidity: ${amountA} ${tokenA} + ${amountB} ${tokenB} = ${slippageAdjusted.toFixed(4)} LP tokens`);
 
@@ -229,9 +259,10 @@ export async function handleLiquidityPool({
       const slippageAdjustedA = tokenAReceived * (1 - slippage / 100);
       const slippageAdjustedB = tokenBReceived * (1 - slippage / 100);
 
-      // Update mock user positions
+      // Update persisted LP position
       const userKey = fromPubkey.toBase58();
-      const existingPositions = mockUserPositions.get(userKey) || [];
+      const allPositions = loadStoredPositions();
+      const existingPositions = allPositions[userKey] || [];
       const positionIndex = existingPositions.findIndex(p => p.poolAddress === pool.poolAddress);
 
       if (positionIndex >= 0) {
@@ -239,7 +270,8 @@ export async function handleLiquidityPool({
         if (existingPositions[positionIndex].lpBalance <= 0) {
           existingPositions.splice(positionIndex, 1);
         }
-        mockUserPositions.set(userKey, existingPositions);
+        allPositions[userKey] = existingPositions;
+        saveStoredPositions(allPositions);
       }
 
       console.log(`[LP][MOCK] Removed liquidity: ${lpTokenAmount} LP tokens = ${slippageAdjustedA.toFixed(4)} ${tokenA} + ${slippageAdjustedB.toFixed(4)} ${tokenB}`);
@@ -264,7 +296,7 @@ export async function handleLiquidityPool({
 
     // Dynamically import Raydium SDK (only on mainnet)
     // @ts-ignore - Raydium SDK may not be installed
-    const { Raydium } = await import('@raydium-io/raydium-sdk-v2').catch(() => {
+    const { Raydium } = await import(/* @vite-ignore */ RAYDIUM_PKG).catch(() => {
       throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
     });
 
@@ -390,7 +422,7 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<PoolI
   try {
     const connection = getConnection(cluster);
     // @ts-ignore - Raydium SDK may not be installed
-    const { Raydium } = await import('@raydium-io/raydium-sdk-v2').catch(() => {
+    const { Raydium } = await import(/* @vite-ignore */ RAYDIUM_PKG).catch(() => {
       throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
     });
 
@@ -433,17 +465,17 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<PoolI
 export async function getUserLPPositions(walletPubkey: PublicKey): Promise<UserLPPosition[]> {
   const cluster = getCluster();
 
-  // DEVNET: Return mock positions
+  // DEVNET: Return persisted positions from localStorage
   if (cluster === 'devnet') {
     const userKey = walletPubkey.toBase58();
-    return mockUserPositions.get(userKey) || [];
+    return getUserPositionsFromStorage(userKey);
   }
 
   // MAINNET: Fetch real positions
   try {
     const connection = getConnection(cluster);
     // @ts-ignore - Raydium SDK may not be installed
-    const { Raydium } = await import('@raydium-io/raydium-sdk-v2').catch(() => {
+    const { Raydium } = await import(/* @vite-ignore */ RAYDIUM_PKG).catch(() => {
       throw new Error('Raydium SDK not installed');
     });
 
