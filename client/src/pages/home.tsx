@@ -7,8 +7,16 @@ import { ModuleLibrary } from "@/components/ModuleLibrary";
 import { WorkflowCanvasWrapper } from "@/components/WorkflowCanvas";
 import { ConfigPanel } from "@/components/ConfigPanel";
 import { Button } from "@/components/ui/button";
-// import { useWorkflow } from "@/hooks/use-workflow";
+import { useWorkflow } from "@/hooks/use-workflow";
+import { workflowService } from "@/lib/workflow-service";
 import { Toaster } from "@/components/ui/toaster";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface Wallet {
   address: string;
@@ -120,26 +128,48 @@ export function useWallet() {
   return context;
 }
 
+interface StoredWorkflow {
+  id: number;
+  name: string;
+  description?: string;
+  created: string;
+  updated: string;
+}
+
 export default function Home() {
-  // Temporary placeholder functions until we fix the workflow context
-  const saveWorkflow = async () => {
-    alert("Save workflow functionality is temporarily disabled");
-    return true;
-  };
-  
-  const clearWorkflow = () => {
-    alert("Clear workflow functionality is temporarily disabled");
-  };
+  const { saveWorkflow, loadWorkflow } = useWorkflow();
+  const { toast } = useToast();
   const [activePanel, setActivePanel] = useState<"modules" | "canvas" | "config">("canvas");
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [savedWorkflows, setSavedWorkflows] = useState<StoredWorkflow[]>([]);
+  const [isLoadingList, setIsLoadingList] = useState(false);
+  const [isLoading, setIsLoading] = useState<number | null>(null);
 
   const handleSave = async () => {
     await saveWorkflow();
   };
 
-  const handleLoad = () => {
-    // For simplicity, we'll load the first workflow
-    // In a real app, this would show a modal with a list of workflows
-    alert("This would open a modal to select a workflow to load");
+  const handleLoad = async () => {
+    setIsLoadingList(true);
+    setShowLoadDialog(true);
+    try {
+      const workflows = await workflowService.getWorkflows();
+      setSavedWorkflows(workflows as StoredWorkflow[]);
+    } catch (err) {
+      toast({ title: 'Failed to fetch workflows', variant: 'destructive' });
+    } finally {
+      setIsLoadingList(false);
+    }
+  };
+
+  const handleSelectWorkflow = async (id: number, name: string) => {
+    setIsLoading(id);
+    const success = await loadWorkflow(id);
+    if (success) {
+      setShowLoadDialog(false);
+      toast({ title: 'Workflow Loaded', description: `"${name}" is now on the canvas.` });
+    }
+    setIsLoading(null);
   };
 
   // Mobile nav panel switcher
@@ -158,6 +188,44 @@ export default function Home() {
 
   return (
     <WalletProvider>
+      {/* Load Workflow Dialog */}
+      <Dialog open={showLoadDialog} onOpenChange={setShowLoadDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Load Workflow</DialogTitle>
+            <DialogDescription>Select a saved workflow to load onto the canvas.</DialogDescription>
+          </DialogHeader>
+          <div className="mt-2 max-h-80 overflow-y-auto space-y-2">
+            {isLoadingList && (
+              <p className="text-sm text-muted-foreground text-center py-4">Loading workflows...</p>
+            )}
+            {!isLoadingList && savedWorkflows.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No saved workflows found.</p>
+            )}
+            {!isLoadingList && savedWorkflows.map((wf) => (
+              <div
+                key={wf.id}
+                className="flex items-center justify-between p-3 rounded-md border border-border bg-card hover:bg-accent transition-colors"
+              >
+                <div className="overflow-hidden mr-3">
+                  <p className="font-medium text-sm truncate">{wf.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(wf.updated).toLocaleDateString()} {new Date(wf.updated).toLocaleTimeString()}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={isLoading === wf.id}
+                  onClick={() => handleSelectWorkflow(wf.id, wf.name)}
+                >
+                  {isLoading === wf.id ? 'Loading...' : 'Load'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
         <header className="bg-card border-b border-border py-3 px-4 flex items-center justify-between">
           <div className="flex items-center space-x-2">

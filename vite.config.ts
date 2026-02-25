@@ -35,6 +35,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['buffer', '@marinade.finance/marinade-ts-sdk'],
+    exclude: ['@raydium-io/raydium-sdk-v2'],
     esbuildOptions: {
       define: {
         global: 'globalThis',
