@@ -9,6 +9,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Workflows from "@/pages/workflows";
 import VisualWorkflow from "@/pages/visual-workflow";
+import Dashboard from "@/pages/dashboard";
 
 function Router() {
   return (
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/workflows" component={Workflows} />
       <Route path="/visual" component={VisualWorkflow} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route component={NotFound} />
     </Switch>
   );

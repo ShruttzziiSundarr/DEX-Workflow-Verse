@@ -2,10 +2,10 @@ import { useState } from "react";
 import { WalletProvider, useWallet } from "@/pages/home";
 import { WalletConnector } from "@/components/WalletConnector";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import WorkflowCreationForm from "@/components/WorkflowCreationForm";
 import WorkflowList from "@/components/WorkflowList";
-import { Layout, PlusCircle, ListChecks } from "lucide-react";
+import { Layout, PlusCircle, ListChecks, LayoutDashboard } from "lucide-react";
 
 function WorkflowsContent() {
   const { wallet } = useWallet();
@@ -75,9 +75,20 @@ export default function Workflows() {
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white shadow">
           <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center">
-              <Layout className="h-6 w-6 text-blue-600 mr-2" />
-              <h1 className="text-xl font-semibold text-gray-900">DEX WorkflowVerse</h1>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center">
+                <Layout className="h-6 w-6 text-blue-600 mr-2" />
+                <h1 className="text-xl font-semibold text-gray-900">DEX WorkflowVerse</h1>
+              </div>
+              <nav className="hidden md:flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/'}>Builder</Button>
+                <Button variant="ghost" size="sm" className="text-blue-600 font-semibold" disabled>Workflows</Button>
+                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/visual'}>Visual</Button>
+                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/dashboard'}>
+                  <LayoutDashboard className="h-4 w-4 mr-1" />
+                  Dashboard
+                </Button>
+              </nav>
             </div>
             <WalletConnector />
           </div>

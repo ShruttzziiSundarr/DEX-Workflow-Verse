@@ -18,14 +18,33 @@ export interface ExecutionRecord {
   totalDuration?: number;
 }
 
-// Global execution history store
-const executionHistory: ExecutionRecord[] = [];
+const HISTORY_KEY = 'dex_execution_history';
+
+function loadStoredHistory(): ExecutionRecord[] {
+  try {
+    const stored = localStorage.getItem(HISTORY_KEY);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return parsed
+      .map((r: any) => ({ ...r, timestamp: new Date(r.timestamp) }))
+      .slice(0, 50);
+  } catch {
+    return [];
+  }
+}
+
+// Global execution history store — seeded from localStorage on startup
+const executionHistory: ExecutionRecord[] = loadStoredHistory();
 
 export function addExecutionRecord(record: ExecutionRecord) {
   executionHistory.unshift(record); // Add to beginning
   if (executionHistory.length > 50) {
     executionHistory.pop(); // Keep max 50 records
   }
+  // Persist to localStorage so history survives page navigation
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(executionHistory));
+  } catch {}
   // Trigger update event
   window.dispatchEvent(new CustomEvent('execution-history-updated'));
 }

@@ -262,13 +262,22 @@ export default function Home() {
                 <span>Workflows</span>
               </Button>
               
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => window.location.href = "/visual"}
                 className="flex items-center space-x-1 bg-secondary hover:bg-accent"
               >
                 <span className="material-icons text-sm">schema</span>
                 <span>Visual Builder</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={() => window.location.href = "/dashboard"}
+                className="flex items-center space-x-1 bg-secondary hover:bg-accent"
+              >
+                <span className="material-icons text-sm">dashboard</span>
+                <span>Dashboard</span>
               </Button>
             </div>
             
