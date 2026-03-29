@@ -1,16 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { PublicKey } from '@solana/web3.js';
 import ReactFlow, {
   Background,
   Controls,
   MiniMap,
   addEdge,
-  useNodesState,
-  useEdgesState,
   Connection,
-  Edge,
-  EdgeChange,
-  NodeChange,
   NodeTypes,
   Node,
   ReactFlowProvider,
@@ -25,9 +20,10 @@ import { ModuleType } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { Card } from '@/components/ui/card';
-import { jupiterSwap, addLiquidity } from '@/lib/solana/jupiterSwap';
-import { getTokenByAddress } from '@/lib/solana/tokenList';
+import { jupiterSwap } from '@/lib/solana/jupiterSwap';
 import { ExecutionHistory, addExecutionRecord, type ExecutionRecord } from './ExecutionHistory';
+import { TimeComparisonPanel } from './TimeComparisonPanel';
+import { PresetWorkflows } from './PresetWorkflows';
 
 const nodeTypes: NodeTypes = {
   workflowNode: WorkflowNode,
@@ -38,45 +34,16 @@ const INITIAL_VIEWPORT = { x: 0, y: 0, zoom: 1 };
 export function WorkflowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
-  const { nodes, setNodes, edges, setEdges, selectedNode, setSelectedNode } = useWorkflow();
+  const { nodes, setNodes, edges, setEdges, setSelectedNode } = useWorkflow();
   const { toast } = useToast();
-  const { wallet, connectWallet, disconnectWallet, isConnecting } = useWallet();
+  const { wallet } = useWallet();
   const [isExecuting, setIsExecuting] = useState(false);
-  
-  // Wallet validity is polled centrally in the WalletProvider; components can read
-  // `walletValid` and `isCheckingWallet` from the provider if needed.
-
-
-
-  // Connect / Disconnect helpers for UI
-  const handleConnectWallet = async () => {
-    try {
-      const provider: any = (window as any)?.solana;
-      if (provider && provider.connect) {
-        const resp = await provider.connect();
-        const addr = resp?.publicKey?.toString?.() || provider.publicKey?.toString?.();
-        await connectWallet(addr);
-      } else {
-        toast({ title: 'Wallet Not Found', description: 'Please install Phantom wallet', variant: 'destructive' });
-      }
-    } catch (err: any) {
-      console.error('Error connecting wallet from UI:', err);
-      toast({ title: 'Connect Failed', description: String(err?.message || err), variant: 'destructive' });
-    }
-  };
-
-  const handleDisconnectWallet = async () => {
-    try {
-      await disconnectWallet();
-      const provider: any = (window as any)?.solana;
-      if (provider && provider.disconnect) {
-        try { await provider.disconnect(); } catch (e) { /* ignore */ }
-      }
-    } catch (err: any) {
-      console.error('Error disconnecting wallet from UI:', err);
-      toast({ title: 'Disconnect Failed', description: String(err?.message || err), variant: 'destructive' });
-    }
-  };
+  const [showTimeComparison, setShowTimeComparison] = useState(false);
+  const [lastComparisonData, setLastComparisonData] = useState<{
+    actions: { type: string; status: 'success' | 'failed' | 'pending'; durationMs?: number }[];
+    totalDurationMs: number;
+    workflowName: string;
+  } | null>(null);
 
   const onNodesChange = useCallback((changes: any) => {
     setNodes((nds) => {
@@ -96,7 +63,7 @@ export function WorkflowCanvas() {
     });
   }, [setNodes]);
 
-  const onEdgesChange = useCallback((changes: any) => {
+  const onEdgesChange = useCallback((_changes: any) => {
     setEdges((eds) => eds);
   }, [setEdges]);
 
@@ -211,6 +178,10 @@ export function WorkflowCanvas() {
     });
   };
 
+  const setNodeExecStatus = useCallback((nodeId: string, status: 'idle' | 'running' | 'success' | 'failed') => {
+    setNodes(nds => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, executionStatus: status } } : n));
+  }, [setNodes]);
+
   const handleExecute = async () => {
     // Prevent double execution
     if (isExecuting) {
@@ -219,6 +190,9 @@ export function WorkflowCanvas() {
     }
 
     setIsExecuting(true);
+
+    // Reset all node statuses to idle
+    setNodes(nds => nds.map(n => ({ ...n, data: { ...n.data, executionStatus: 'idle' } })));
 
     // Start tracking execution for history
     const executionStartTime = Date.now();
@@ -319,6 +293,7 @@ export function WorkflowCanvas() {
         toast({ title: 'Executing Swap...', description: `Swapping ${uiAmount} ${sourceToken} -> ${targetToken} (devnet mock)` });
 
         try {
+          setNodeExecStatus(swapNode.id, 'running');
           const result = await jupiterSwap({
             inputMint,
             outputMint,
@@ -335,6 +310,7 @@ export function WorkflowCanvas() {
             title: 'Swap Completed',
             description: result.message || `Swapped ${uiAmount} ${sourceToken} for ~${result.outputAmount?.toFixed(4) || '?'} ${targetToken}`,
           });
+          setNodeExecStatus(swapNode.id, 'success');
 
           console.log('[Swap] Result:', result);
 
@@ -366,6 +342,7 @@ export function WorkflowCanvas() {
             status: 'failed',
             message: swapError.message || 'Unknown error during swap',
           });
+          setNodeExecStatus(swapNode.id, 'failed');
           return;
         }
       }
@@ -398,6 +375,7 @@ export function WorkflowCanvas() {
           if (lpAction === 'addLiquidity') {
             toast({ title: 'Adding Liquidity...', description: `Adding ${amountA} ${tokenA} + ${amountB} ${tokenB} to pool (devnet mock)` });
 
+            setNodeExecStatus(liquidityNode.id, 'running');
             const result = await handleLiquidityPool({
               action: 'addLiquidity',
               tokenA,
@@ -412,6 +390,7 @@ export function WorkflowCanvas() {
               title: 'Liquidity Added',
               description: result.message || `Received ${result.lpTokensReceived?.toFixed(4)} LP tokens`,
             });
+            setNodeExecStatus(liquidityNode.id, 'success');
 
             executionActions.push({
               type: 'addLiquidity',
@@ -430,6 +409,7 @@ export function WorkflowCanvas() {
           } else {
             toast({ title: 'Removing Liquidity...', description: `Removing ${lpTokenAmount} LP tokens from ${tokenA}/${tokenB} pool (devnet mock)` });
 
+            setNodeExecStatus(liquidityNode.id, 'running');
             const result = await handleLiquidityPool({
               action: 'removeLiquidity',
               tokenA,
@@ -443,6 +423,7 @@ export function WorkflowCanvas() {
               title: 'Liquidity Removed',
               description: result.message || `Received ${result.tokenAReceived?.toFixed(4)} ${tokenA} + ${result.tokenBReceived?.toFixed(4)} ${tokenB}`,
             });
+            setNodeExecStatus(liquidityNode.id, 'success');
 
             executionActions.push({
               type: 'removeLiquidity',
@@ -471,6 +452,7 @@ export function WorkflowCanvas() {
             status: 'failed',
             message: lpError.message || 'Unknown error during liquidity operation',
           });
+          setNodeExecStatus(liquidityNode.id, 'failed');
           return;
         }
       }
@@ -515,6 +497,7 @@ export function WorkflowCanvas() {
         try {
           // Use smart Marinade service (mocks on devnet, real on mainnet)
           const { handleMarinadeStake } = await import('../lib/solana/marinadeStaking');
+          setNodeExecStatus(stakeNode.id, 'running');
           const signature = await handleMarinadeStake({
             action: marinadeAction,
             amount: marinadeAction === 'stake' ? amount : undefined,
@@ -526,6 +509,7 @@ export function WorkflowCanvas() {
             title: 'Marinade Stake Transaction Confirmed',
             description: `Signature: ${signature.slice(0, 8)}... View in explorer`,
           });
+          setNodeExecStatus(stakeNode.id, 'success');
 
           // Record stake action in history
           executionActions.push({
@@ -553,6 +537,7 @@ export function WorkflowCanvas() {
             status: 'failed',
             message: error.message || 'Unexpected error',
           });
+          setNodeExecStatus(stakeNode.id, 'failed');
           return;
         }
       }
@@ -588,21 +573,27 @@ export function WorkflowCanvas() {
           const toPubkey = new PublicKey(recipient);
           const lamports = Math.floor(amountSol * LAMPORTS_PER_SOL);
 
-          const { blockhash } = await connection.getLatestBlockhash();
+          const latestBlockhash = await connection.getLatestBlockhash();
           const tx = new Transaction().add(
             SystemProgram.transfer({ fromPubkey, toPubkey, lamports })
           );
-          tx.recentBlockhash = blockhash;
+          tx.recentBlockhash = latestBlockhash.blockhash;
           tx.feePayer = fromPubkey;
 
+          setNodeExecStatus(lightningNode.id, 'running');
           const signed = await provider.signTransaction(tx);
           const signature = await connection.sendRawTransaction(signed.serialize());
-          await connection.confirmTransaction(signature, 'confirmed');
+          await connection.confirmTransaction({
+            signature,
+            blockhash: latestBlockhash.blockhash,
+            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+          }, 'confirmed');
 
           toast({
             title: 'SOL Transfer Confirmed',
             description: `Sent ${amountSol} SOL to ${recipient.slice(0, 8)}... | Sig: ${signature.slice(0, 8)}...`,
           });
+          setNodeExecStatus(lightningNode.id, 'success');
 
           executionActions.push({
             type: 'lightning',
@@ -615,6 +606,7 @@ export function WorkflowCanvas() {
           console.error('SOL transfer error:', err);
           toast({ title: 'SOL Transfer Failed', description: err.message || 'Unknown error', variant: 'destructive' });
           executionActions.push({ type: 'lightning', status: 'failed', message: err.message || 'Unknown error' });
+          setNodeExecStatus(lightningNode.id, 'failed');
           return;
         }
       }
@@ -643,6 +635,14 @@ export function WorkflowCanvas() {
         totalDuration: executionDuration,
       });
 
+      // Show time comparison panel
+      setLastComparisonData({
+        actions: executionActions.map((a) => ({ type: a.type, status: a.status })),
+        totalDurationMs: executionDuration,
+        workflowName: `Workflow (${nodes.length} nodes)`,
+      });
+      setShowTimeComparison(true);
+
     } catch (err: any) {
       console.error(err);
       toast({ title: 'Execution Failed', description: String(err?.message || err), variant: 'destructive' });
@@ -663,73 +663,34 @@ export function WorkflowCanvas() {
   };
 
   return (
+    <>
+      {lastComparisonData && (
+        <TimeComparisonPanel
+          open={showTimeComparison}
+          onClose={() => setShowTimeComparison(false)}
+          actions={lastComparisonData.actions}
+          totalDurationMs={lastComparisonData.totalDurationMs}
+          workflowName={lastComparisonData.workflowName}
+        />
+      )}
+
     <div className="flex-1 bg-dark-300 overflow-hidden flex flex-col h-[calc(100vh-64px)]">
-      <div className="border-b border-dark-100 p-3 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-sm font-medium">My Workflow</h2>
-          <div className="flex items-center space-x-1 text-xs text-gray-400">
+      <div className="border-b border-dark-100 px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Canvas</h2>
+          <div className="h-4 w-px bg-border" />
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
             <span className="material-icons text-xs">info</span>
-            <span>Drag modules to canvas and connect them</span>
+            <span>Drag modules from the library and connect them</span>
           </div>
-
-          {/* Wallet connection status */}
-          <div className="ml-2">
-            {wallet?.isConnected ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-1 bg-green-600 text-white rounded">
-                  {wallet.address.substring(0, 6)}...{wallet.address.slice(-4)}
-                </span>
-                <button
-                  onClick={handleDisconnectWallet}
-                  className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                >
-                  Disconnect
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={handleConnectWallet}
-                className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-              </button>
-            )}
-          </div>
-
-          <div className="h-4 w-px bg-dark-100 mx-2"></div>
-          
-          <div className="flex items-center space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleValidate}
-              className="flex items-center gap-1 text-xs bg-purple-500 text-white hover:bg-purple-600"
-            >
-              <span className="material-icons text-xs">check_circle</span>
-              <span>Validate</span>
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleExecute}
-              disabled={isExecuting}
-              className="flex items-center gap-1 text-xs bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="material-icons text-xs">rocket_launch</span>
-              <span>{isExecuting ? 'Executing...' : 'Execute'}</span>
-            </Button>
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          <Button variant="outline" size="sm" className="flex items-center gap-1 text-xs">
-            <span className="material-icons text-xs">zoom_in</span>
-          </Button>
-          <Button variant="outline" size="sm" className="flex items-center gap-1 text-xs">
-            <span className="material-icons text-xs">zoom_out</span>
-          </Button>
-          <Button variant="outline" size="sm" className="flex items-center gap-1 text-xs">
-            <span className="material-icons text-xs">fit_screen</span>
-          </Button>
+          {wallet?.isConnected && (
+            <>
+              <div className="h-4 w-px bg-border" />
+              <span className="text-xs px-2 py-0.5 bg-green-600/20 text-green-400 border border-green-600/30 rounded-full">
+                {wallet.address.substring(0, 6)}…{wallet.address.slice(-4)}
+              </span>
+            </>
+          )}
         </div>
       </div>
       
@@ -772,47 +733,63 @@ export function WorkflowCanvas() {
 
         {nodes.length === 0 && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <Card className="bg-dark-200/60 border border-dark-100 p-6 max-w-md text-center">
-              <h3 className="text-lg font-medium mb-2">Empty Workflow</h3>
-              <p className="text-gray-400 text-sm mb-4">
-                Drag modules from the library panel to create your workflow
-              </p>
-              <span className="material-icons text-4xl text-gray-500">drag_indicator</span>
-            </Card>
+            <div className="pointer-events-auto max-w-lg w-full mx-6">
+              <Card className="bg-dark-200/80 border border-dark-100 p-6 backdrop-blur-sm">
+                <div className="text-center mb-5">
+                  <span className="material-icons text-4xl text-gray-500 mb-2 block">drag_indicator</span>
+                  <h3 className="text-lg font-medium">Empty Workflow</h3>
+                  <p className="text-gray-400 text-sm mt-1">
+                    Drag modules from the left panel, or load a preset below to get started
+                  </p>
+                </div>
+                <PresetWorkflows />
+              </Card>
+            </div>
           </div>
         )}
       </div>
       
-      <div className="border-t border-dark-100 p-4 flex items-center justify-between bg-white/5 backdrop-blur-sm">
-        <div className="flex items-center space-x-3">
-          <Button variant="outline" size="sm" onClick={handleNew} className="flex items-center gap-2 text-sm hover:bg-gray-100">
+      <div className="border-t border-dark-100 px-4 py-3 flex items-center justify-between bg-card/80 backdrop-blur-sm">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleNew} className="flex items-center gap-1.5 text-sm">
             <span className="material-icons text-sm">add</span>
-            <span>New</span>
+            New
           </Button>
-          <Button variant="outline" size="sm" onClick={handleClear} className="flex items-center gap-2 text-sm hover:bg-gray-100">
-            <span className="material-icons text-sm">delete</span>
-            <span>Clear</span>
+          <Button variant="outline" size="sm" onClick={handleClear} className="flex items-center gap-1.5 text-sm text-destructive hover:text-destructive">
+            <span className="material-icons text-sm">delete_outline</span>
+            Clear
           </Button>
+          {lastComparisonData && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowTimeComparison(true)}
+              className="flex items-center gap-1.5 text-sm text-blue-400 border-blue-400/30 hover:bg-blue-400/10"
+            >
+              <span className="material-icons text-sm">timer</span>
+              Time Saved
+            </Button>
+          )}
         </div>
-        
-        <div className="flex items-center space-x-3">
-          <Button 
-            variant="outline" 
-            size="default"
-            onClick={handleValidate} 
-            className="flex items-center gap-2 px-6 py-2 text-sm font-medium bg-purple-500 text-white hover:bg-purple-600 border-purple-600"
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleValidate}
+            className="flex items-center gap-1.5 text-sm bg-purple-600 text-white hover:bg-purple-700 border-purple-700"
           >
             <span className="material-icons text-sm">check_circle</span>
-            <span>Validate</span>
+            Validate
           </Button>
-          <Button 
-            size="default"
+          <Button
+            size="sm"
             onClick={handleExecute}
             disabled={isExecuting}
-            className="flex items-center gap-2 px-6 py-2 text-sm font-medium bg-green-500 text-white hover:bg-green-600 border-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 text-sm bg-green-600 text-white hover:bg-green-700 border-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-icons text-sm">rocket_launch</span>
-            <span>{isExecuting ? 'Executing...' : 'Execute'}</span>
+            {isExecuting ? 'Executing…' : 'Execute'}
           </Button>
         </div>
       </div>
@@ -820,6 +797,7 @@ export function WorkflowCanvas() {
       {/* Execution History Panel */}
       <ExecutionHistory />
     </div>
+    </>
   );
 }
 

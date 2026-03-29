@@ -1,6 +1,7 @@
 import { ModuleCard } from "./modules/ModuleCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ModuleType } from "@shared/schema";
+import { PresetWorkflows } from './PresetWorkflows';
 
 type ModuleInfo = {
   type: ModuleType;
@@ -93,16 +94,19 @@ export function ModuleLibrary() {
   return (
     <div className="w-64 bg-card overflow-y-auto flex-shrink-0 border-r border-border hidden md:block">
       <ScrollArea className="h-full">
-        <div className="p-4">
-          <h2 className="text-lg font-medium mb-4">Module Library</h2>
-          
+        <div className="p-4 space-y-5">
+          <PresetWorkflows />
+          <div className="border-t border-border" />
+          <div>
+          <h2 className="text-sm font-semibold mb-3">Module Library</h2>
+
           <div className="space-y-4">
             {CATEGORIES.map((category) => (
               <div key={category.name}>
                 <div className="mb-2 text-xs uppercase text-muted-foreground font-medium">
                   {category.name}
                 </div>
-                
+
                 <div className="space-y-3">
                   {MODULES
                     .filter((module) => category.modules.includes(module.type))
@@ -120,6 +124,7 @@ export function ModuleLibrary() {
                 </div>
               </div>
             ))}
+          </div>
           </div>
         </div>
       </ScrollArea>

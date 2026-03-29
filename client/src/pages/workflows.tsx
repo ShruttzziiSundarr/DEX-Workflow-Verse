@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import WorkflowCreationForm from "@/components/WorkflowCreationForm";
 import WorkflowList from "@/components/WorkflowList";
-import { Layout, PlusCircle, ListChecks, LayoutDashboard } from "lucide-react";
+import { PlusCircle, ListChecks } from "lucide-react";
 
 function WorkflowsContent() {
   const { wallet } = useWallet();
@@ -15,10 +15,10 @@ function WorkflowsContent() {
     return (
       <div className="flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="text-center">
-          <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 sm:text-4xl">
+          <h2 className="text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
             Connect your wallet
           </h2>
-          <p className="mt-4 text-lg text-gray-500">
+          <p className="mt-4 text-lg text-muted-foreground">
             You need to connect your wallet to access workflow features.
           </p>
           <div className="mt-6">
@@ -34,7 +34,7 @@ function WorkflowsContent() {
       <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-3xl font-bold">Workflow Manager</h1>
-          <p className="text-gray-600">Create, manage, and execute your DeFi workflows</p>
+          <p className="text-muted-foreground">Create, manage, and execute your DeFi workflows</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -72,22 +72,19 @@ function WorkflowsContent() {
 export default function Workflows() {
   return (
     <WalletProvider>
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow">
-          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="bg-card border-b border-border">
+          <div className="container mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-6">
-              <div className="flex items-center">
-                <Layout className="h-6 w-6 text-blue-600 mr-2" />
-                <h1 className="text-xl font-semibold text-gray-900">DEX WorkflowVerse</h1>
-              </div>
+              <a href="/" className="flex items-center gap-1 hover:opacity-80 transition-opacity">
+                <span className="text-primary text-xl font-bold tracking-tight">DEX</span>
+                <span className="text-foreground text-xl font-light tracking-tight">WorkflowVerse</span>
+              </a>
               <nav className="hidden md:flex gap-1">
-                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/'}>Builder</Button>
-                <Button variant="ghost" size="sm" className="text-blue-600 font-semibold" disabled>Workflows</Button>
-                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/visual'}>Visual</Button>
-                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/dashboard'}>
-                  <LayoutDashboard className="h-4 w-4 mr-1" />
-                  Dashboard
-                </Button>
+                <a href="/"><Button variant="ghost" size="sm">Builder</Button></a>
+                <Button variant="ghost" size="sm" className="text-primary font-semibold" disabled>Workflows</Button>
+                <a href="/visual"><Button variant="ghost" size="sm">Visual</Button></a>
+                <a href="/dashboard"><Button variant="ghost" size="sm">Dashboard</Button></a>
               </nav>
             </div>
             <WalletConnector />

@@ -227,62 +227,66 @@ export default function Home() {
       </Dialog>
 
       <div className="flex flex-col h-screen overflow-hidden bg-background text-foreground">
-        <header className="bg-card border-b border-border py-3 px-4 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <div className="text-primary text-2xl font-bold">DEX</div>
-            <div className="text-foreground text-2xl font-light">WorkflowVerse</div>
-          </div>
-          
-          <div className="flex items-center space-x-4">
-            <div className="hidden md:flex items-center space-x-2">
-              <Button 
-                variant="outline" 
-                onClick={handleSave}
-                className="flex items-center space-x-1 bg-secondary hover:bg-accent"
-              >
-                <span className="material-icons text-sm">save</span>
-                <span>Save</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                onClick={handleLoad}
-                className="flex items-center space-x-1 bg-secondary hover:bg-accent"
-              >
-                <span className="material-icons text-sm">folder_open</span>
-                <span>Load</span>
-              </Button>
-              
-              <Button 
-                variant="outline" 
-                onClick={() => window.location.href = "/workflows"}
-                className="flex items-center space-x-1 bg-dark-200 hover:bg-dark-100 mr-2"
-              >
-                <span className="material-icons text-sm">list</span>
-                <span>Workflows</span>
-              </Button>
-              
-              <Button
-                variant="outline"
-                onClick={() => window.location.href = "/visual"}
-                className="flex items-center space-x-1 bg-secondary hover:bg-accent"
-              >
-                <span className="material-icons text-sm">schema</span>
-                <span>Visual Builder</span>
-              </Button>
+        <header className="bg-card border-b border-border py-2.5 px-4 flex items-center justify-between gap-4">
+          {/* Brand */}
+          <a href="/" className="flex items-center gap-1 shrink-0 hover:opacity-80 transition-opacity">
+            <span className="text-primary text-xl font-bold tracking-tight">DEX</span>
+            <span className="text-foreground text-xl font-light tracking-tight">WorkflowVerse</span>
+          </a>
 
-              <Button
-                variant="outline"
-                onClick={() => window.location.href = "/dashboard"}
-                className="flex items-center space-x-1 bg-secondary hover:bg-accent"
-              >
-                <span className="material-icons text-sm">dashboard</span>
-                <span>Dashboard</span>
+          {/* Nav actions */}
+          <div className="hidden md:flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSave}
+              className="flex items-center gap-1.5 text-sm"
+            >
+              <span className="material-icons text-sm">save</span>
+              Save
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLoad}
+              className="flex items-center gap-1.5 text-sm"
+            >
+              <span className="material-icons text-sm">folder_open</span>
+              Load
+            </Button>
+
+            <div className="h-5 w-px bg-border mx-1" />
+
+            <a href="/workflows">
+              <Button variant="ghost" size="sm" className="flex items-center gap-1.5 text-sm">
+                <span className="material-icons text-sm">list</span>
+                Workflows
               </Button>
-            </div>
-            
-            <WalletConnector />
+            </a>
+            <a href="/visual">
+              <Button variant="ghost" size="sm" className="flex items-center gap-1.5 text-sm">
+                <span className="material-icons text-sm">schema</span>
+                Visual
+              </Button>
+            </a>
+            <a href="/dashboard">
+              <Button variant="ghost" size="sm" className="flex items-center gap-1.5 text-sm">
+                <span className="material-icons text-sm">dashboard</span>
+                Dashboard
+              </Button>
+            </a>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-1.5 text-sm"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-execution-history'))}
+            >
+              <span className="material-icons text-sm">history</span>
+              History
+            </Button>
           </div>
+
+          <WalletConnector />
         </header>
         
         <div className="flex flex-1 overflow-hidden">
@@ -301,40 +305,30 @@ export default function Home() {
         
         {/* Mobile Bottom Nav */}
         <div className="md:hidden border-t border-border bg-card py-2 px-4 flex justify-around">
+          {[
+            { id: "modules" as const, icon: "category", label: "Modules" },
+            { id: "canvas" as const, icon: "grid_view", label: "Canvas" },
+            { id: "config" as const, icon: "settings", label: "Configure" },
+          ].map(({ id, icon, label }) => (
+            <Button
+              key={id}
+              variant="ghost"
+              className={`flex flex-col items-center gap-0.5 h-auto py-1 ${
+                activePanel === id ? "text-primary" : "text-muted-foreground"
+              }`}
+              onClick={() => setActivePanel(id)}
+            >
+              <span className="material-icons text-xl">{icon}</span>
+              <span className="text-xs">{label}</span>
+            </Button>
+          ))}
           <Button
             variant="ghost"
-            className={`flex flex-col items-center ${activePanel === "modules" ? "text-foreground" : "text-muted-foreground"}`}
-            onClick={() => setActivePanel("modules")}
-          >
-            <span className="material-icons">category</span>
-            <span className="text-xs mt-1">Modules</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={`flex flex-col items-center ${activePanel === "canvas" ? "text-white" : "text-gray-400"}`}
-            onClick={() => setActivePanel("canvas")}
-          >
-            <span className="material-icons">dashboard</span>
-            <span className="text-xs mt-1">Canvas</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={`flex flex-col items-center ${activePanel === "config" ? "text-white" : "text-gray-400"}`}
-            onClick={() => setActivePanel("config")}
-          >
-            <span className="material-icons">settings</span>
-            <span className="text-xs mt-1">Configure</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className="flex flex-col items-center text-gray-400"
+            className="flex flex-col items-center gap-0.5 h-auto py-1 text-muted-foreground"
             onClick={handleSave}
           >
-            <span className="material-icons">save</span>
-            <span className="text-xs mt-1">Save</span>
+            <span className="material-icons text-xl">save</span>
+            <span className="text-xs">Save</span>
           </Button>
         </div>
       </div>

@@ -58,15 +58,16 @@ export function ExecutionHistory() {
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
-    const updateHistory = () => {
-      setHistory(getExecutionHistory());
-    };
+    const updateHistory = () => setHistory(getExecutionHistory());
+    const openPanel = () => setIsExpanded(true);
 
     updateHistory();
     window.addEventListener('execution-history-updated', updateHistory);
+    window.addEventListener('open-execution-history', openPanel);
 
     return () => {
       window.removeEventListener('execution-history-updated', updateHistory);
+      window.removeEventListener('open-execution-history', openPanel);
     };
   }, []);
 
@@ -210,9 +211,44 @@ function ExecutionRecordCard({ record }: { record: ExecutionRecord }) {
             </div>
           ))}
 
-          {record.totalDuration && (
-            <div className="text-xs text-muted-foreground pt-2 border-t border-dark-100">
-              Total time: {(record.totalDuration / 1000).toFixed(2)}s
+          {record.totalDuration !== undefined && (
+            <div className="pt-2 border-t border-dark-100 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">DEX WorkflowVerse:</span>
+                <span className="text-green-400 font-medium">
+                  {record.totalDuration < 1000
+                    ? `${record.totalDuration}ms`
+                    : `${(record.totalDuration / 1000).toFixed(1)}s`}
+                </span>
+              </div>
+              {(() => {
+                const TRAD: Record<string, number> = {
+                  swap: 180, jupiterSwap: 180, addLiquidity: 600, removeLiquidity: 480,
+                  liquidityPool: 540, stake: 900, claim: 300, bridge: 2700, lightning: 420,
+                };
+                const tradTotal = record.actions.reduce(
+                  (sum, a) => sum + (TRAD[a.type] ?? 120), 0
+                );
+                const saved = Math.round(
+                  ((tradTotal - record.totalDuration / 1000) / tradTotal) * 100
+                );
+                const tradMins = Math.floor(tradTotal / 60);
+                const tradSecs = tradTotal % 60;
+                return (
+                  <>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Traditional:</span>
+                      <span className="text-red-400 font-medium">
+                        {tradMins > 0 ? `${tradMins}m ` : ''}{tradSecs > 0 ? `${tradSecs}s` : ''}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Time saved:</span>
+                      <span className="text-blue-400 font-medium">{saved}% faster</span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>

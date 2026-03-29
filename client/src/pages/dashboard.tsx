@@ -23,8 +23,8 @@ import {
   RefreshCw,
   ExternalLink,
   Activity,
-  Layout,
   AlertCircle,
+  Timer,
 } from 'lucide-react';
 
 // Reverse-lookup map for devnet mock pool addresses → human-readable names
@@ -61,10 +61,10 @@ function StatCard({
       <CardContent className="pt-5 pb-4">
         <div className="flex items-center gap-2 mb-1">
           {icon}
-          <span className="text-sm text-gray-600">{label}</span>
+          <span className="text-sm text-muted-foreground">{label}</span>
         </div>
         <p className="text-2xl font-bold tracking-tight">{value}</p>
-        <p className="text-xs text-gray-500 mt-1">{sub}</p>
+        <p className="text-xs text-muted-foreground mt-1">{sub}</p>
       </CardContent>
     </Card>
   );
@@ -146,6 +146,25 @@ function DashboardContent() {
 
   const totalLpValue = lpPositions.reduce((sum, p) => sum + (p.valueUSD || 0), 0);
 
+  // Cumulative time comparison
+  const TRAD_SECONDS: Record<string, number> = {
+    swap: 180, jupiterSwap: 180, addLiquidity: 600, removeLiquidity: 480,
+    liquidityPool: 540, stake: 900, claim: 300, bridge: 2700, lightning: 420,
+  };
+  const totalTraditionalSeconds = history.reduce((sum, record) => {
+    return sum + record.actions
+      .filter(a => a.status === 'success')
+      .reduce((s, a) => s + (TRAD_SECONDS[a.type] ?? 120), 0);
+  }, 0);
+  const totalDexMs = history.reduce((sum, r) => sum + (r.totalDuration ?? 0), 0);
+  const totalSavedSeconds = Math.max(0, totalTraditionalSeconds - totalDexMs / 1000);
+  const savedPercent = totalTraditionalSeconds > 0 ? Math.round((totalSavedSeconds / totalTraditionalSeconds) * 100) : 0;
+  function fmtSaved(sec: number) {
+    if (sec < 60) return `${Math.round(sec)}s`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+    return `${(sec / 3600).toFixed(1)}h`;
+  }
+
   // ── Not connected ────────────────────────────────────────────────────────
   if (!wallet?.isConnected) {
     return (
@@ -167,9 +186,9 @@ function DashboardContent() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold">Portfolio Dashboard</h1>
-          <p className="text-gray-600 mt-1">
+          <p className="text-muted-foreground mt-1">
             Your DeFi activity on{' '}
-            <span className="font-medium text-blue-600">Solana Devnet</span>
+            <span className="font-medium text-blue-400">Solana Devnet</span>
           </p>
         </div>
         <Button variant="outline" onClick={loadData} disabled={loading}>
@@ -179,23 +198,23 @@ function DashboardContent() {
       </div>
 
       {/* ── Summary stats ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         <StatCard
           icon={<Wallet className="h-5 w-5 text-blue-600" />}
           label="SOL Balance"
           value={solBalance !== null ? `${solBalance.toFixed(4)} SOL` : '—'}
           sub="Solana Devnet"
-          colorClass="bg-blue-50 border-blue-100"
+          colorClass="bg-blue-500/10 border-blue-500/20"
         />
         <StatCard
-          icon={<Droplets className="h-5 w-5 text-purple-600" />}
+          icon={<Droplets className="h-5 w-5 text-purple-500" />}
           label="LP Portfolio"
           value={`$${totalLpValue.toFixed(2)}`}
           sub={`${lpPositions.length} position${lpPositions.length !== 1 ? 's' : ''}`}
-          colorClass="bg-purple-50 border-purple-100"
+          colorClass="bg-purple-500/10 border-purple-500/20"
         />
         <StatCard
-          icon={<TrendingUp className="h-5 w-5 text-green-600" />}
+          icon={<TrendingUp className="h-5 w-5 text-green-500" />}
           label="Total Staked"
           value={staking ? `${staking.totalStaked.toFixed(4)} SOL` : '—'}
           sub={
@@ -203,16 +222,77 @@ function DashboardContent() {
               ? `${staking.accounts.length} account${staking.accounts.length !== 1 ? 's' : ''}`
               : 'Loading...'
           }
-          colorClass="bg-green-50 border-green-100"
+          colorClass="bg-green-500/10 border-green-500/20"
         />
         <StatCard
-          icon={<Activity className="h-5 w-5 text-orange-600" />}
+          icon={<Activity className="h-5 w-5 text-orange-500" />}
           label="Workflows Run"
           value={history.length.toString()}
           sub={`${workflowCount} saved`}
-          colorClass="bg-orange-50 border-orange-100"
+          colorClass="bg-orange-500/10 border-orange-500/20"
+        />
+        <StatCard
+          icon={<Timer className="h-5 w-5 text-teal-500" />}
+          label="Time Saved"
+          value={history.length === 0 ? '—' : fmtSaved(totalSavedSeconds)}
+          sub={history.length === 0 ? 'Run a workflow to see' : `${savedPercent}% vs manual ops`}
+          colorClass="bg-teal-500/10 border-teal-500/20"
         />
       </div>
+
+      {/* ── Automation Impact ─────────────────────────────────────────────── */}
+      {history.length > 0 && (
+        <Card className="mb-6 border-teal-500/20 bg-teal-500/5">
+          <CardContent className="pt-5 pb-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-teal-500/20 rounded-full">
+                  <Timer className="h-6 w-6 text-teal-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Automation Impact</p>
+                  <p className="text-sm text-muted-foreground">
+                    DEX WorkflowVerse saved you <strong className="text-teal-400">{fmtSaved(totalSavedSeconds)}</strong> across{' '}
+                    {history.length} execution{history.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-8 text-center">
+                <div>
+                  <p className="text-2xl font-bold text-red-400">{fmtSaved(totalTraditionalSeconds)}</p>
+                  <p className="text-xs text-muted-foreground">Manual estimate</p>
+                </div>
+                <div className="text-muted-foreground text-xl">→</div>
+                <div>
+                  <p className="text-2xl font-bold text-green-400">{totalDexMs < 1000 ? `${totalDexMs}ms` : `${(totalDexMs / 1000).toFixed(1)}s`}</p>
+                  <p className="text-xs text-muted-foreground">WorkflowVerse</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-teal-400">{savedPercent}%</p>
+                  <p className="text-xs text-muted-foreground">Faster</p>
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 space-y-1">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-24">Manual</span>
+                <div className="flex-1 h-3 bg-red-500/20 rounded-full">
+                  <div className="h-full bg-red-400 rounded-full" style={{ width: '100%' }} />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground w-24">WorkflowVerse</span>
+                <div className="flex-1 h-3 bg-green-500/20 rounded-full">
+                  <div
+                    className="h-full bg-green-400 rounded-full"
+                    style={{ width: `${Math.max(1, 100 - savedPercent)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── LP Positions + Staking (two columns) ──────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -226,7 +306,7 @@ function DashboardContent() {
           </CardHeader>
           <CardContent>
             {lpPositions.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">
+              <div className="text-center py-10 text-muted-foreground">
                 <Droplets className="h-10 w-10 mx-auto mb-2 opacity-25" />
                 <p className="font-medium">No LP positions found</p>
                 <p className="text-xs mt-1">
@@ -278,9 +358,9 @@ function DashboardContent() {
           <CardContent>
             {staking && staking.accounts.length > 0 ? (
               <>
-                <div className="mb-4 p-3 bg-green-50 rounded-lg border border-green-100">
-                  <p className="text-xs text-gray-500 uppercase tracking-wide">Total Staked</p>
-                  <p className="text-2xl font-bold text-green-700">
+                <div className="mb-4 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Staked</p>
+                  <p className="text-2xl font-bold text-green-400">
                     {staking.totalStaked.toFixed(4)} SOL
                   </p>
                 </div>
@@ -288,9 +368,9 @@ function DashboardContent() {
                   {staking.accounts.map((acc, i) => (
                     <div
                       key={i}
-                      className="flex items-center justify-between p-2 bg-gray-50 rounded border text-sm"
+                      className="flex items-center justify-between p-2 bg-muted rounded border border-border text-sm"
                     >
-                      <span className="font-mono text-xs text-gray-600">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {acc.address.slice(0, 8)}…{acc.address.slice(-6)}
                       </span>
                       <div className="flex items-center gap-2">
@@ -299,7 +379,7 @@ function DashboardContent() {
                         </span>
                         <Badge
                           variant={acc.state === 'active' ? 'default' : 'secondary'}
-                          className={`text-xs ${acc.state === 'active' ? 'bg-green-100 text-green-800' : ''}`}
+                          className={`text-xs ${acc.state === 'active' ? 'bg-green-500/20 text-green-400' : ''}`}
                         >
                           {acc.state}
                         </Badge>
@@ -309,7 +389,7 @@ function DashboardContent() {
                 </div>
               </>
             ) : (
-              <div className="text-center py-10 text-gray-500">
+              <div className="text-center py-10 text-muted-foreground">
                 <TrendingUp className="h-10 w-10 mx-auto mb-2 opacity-25" />
                 <p className="font-medium">No active stake accounts</p>
                 <p className="text-xs mt-1">
@@ -331,7 +411,7 @@ function DashboardContent() {
         </CardHeader>
         <CardContent>
           {history.length === 0 ? (
-            <div className="text-center py-10 text-gray-500">
+            <div className="text-center py-10 text-muted-foreground">
               <History className="h-10 w-10 mx-auto mb-2 opacity-25" />
               <p className="font-medium">No workflow runs yet</p>
               <p className="text-xs mt-1">
@@ -359,7 +439,7 @@ function DashboardContent() {
 
                     return (
                       <TableRow key={record.id}>
-                        <TableCell className="text-xs text-gray-500 whitespace-nowrap">
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                           {new Date(record.timestamp).toLocaleTimeString()}
                           <br />
                           {new Date(record.timestamp).toLocaleDateString()}
@@ -380,7 +460,7 @@ function DashboardContent() {
                             }
                             className={
                               record.status === 'success'
-                                ? 'bg-green-100 text-green-800'
+                                ? 'bg-green-500/20 text-green-400 border-green-500/30'
                                 : ''
                             }
                           >
@@ -396,9 +476,9 @@ function DashboardContent() {
                                 variant="outline"
                                 className={`text-xs capitalize ${
                                   action.status === 'success'
-                                    ? 'border-green-300 text-green-700'
+                                    ? 'border-green-500/40 text-green-400'
                                     : action.status === 'failed'
-                                    ? 'border-red-300 text-red-700'
+                                    ? 'border-red-500/40 text-red-400'
                                     : ''
                                 }`}
                               >
@@ -408,7 +488,7 @@ function DashboardContent() {
                           </div>
                         </TableCell>
 
-                        <TableCell className="text-right text-xs text-gray-500 whitespace-nowrap">
+                        <TableCell className="text-right text-xs text-muted-foreground whitespace-nowrap">
                           {record.totalDuration
                             ? `${(record.totalDuration / 1000).toFixed(1)}s`
                             : '—'}
@@ -416,7 +496,7 @@ function DashboardContent() {
 
                         <TableCell>
                           {signatures.length === 0 ? (
-                            <span className="text-xs text-gray-400">mock only</span>
+                            <span className="text-xs text-muted-foreground">mock only</span>
                           ) : (
                             <div className="flex flex-wrap gap-2">
                               {signatures.map(({ sig, type }, i) => (
@@ -453,44 +533,19 @@ function DashboardContent() {
 export default function Dashboard() {
   return (
     <WalletProvider>
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow">
-          <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="bg-card border-b border-border">
+          <div className="container mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-6">
-              <div className="flex items-center">
-                <Layout className="h-6 w-6 text-blue-600 mr-2" />
-                <span className="text-xl font-semibold text-gray-900">
-                  DEX WorkflowVerse
-                </span>
-              </div>
+              <a href="/" className="flex items-center gap-1 hover:opacity-80 transition-opacity">
+                <span className="text-primary text-xl font-bold tracking-tight">DEX</span>
+                <span className="text-foreground text-xl font-light tracking-tight">WorkflowVerse</span>
+              </a>
               <nav className="hidden md:flex gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => (window.location.href = '/')}
-                >
-                  Builder
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => (window.location.href = '/workflows')}
-                >
-                  Workflows
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => (window.location.href = '/visual')}
-                >
-                  Visual
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-blue-600 font-semibold"
-                  disabled
-                >
+                <a href="/"><Button variant="ghost" size="sm">Builder</Button></a>
+                <a href="/workflows"><Button variant="ghost" size="sm">Workflows</Button></a>
+                <a href="/visual"><Button variant="ghost" size="sm">Visual</Button></a>
+                <Button variant="ghost" size="sm" className="text-primary font-semibold" disabled>
                   Dashboard
                 </Button>
               </nav>
