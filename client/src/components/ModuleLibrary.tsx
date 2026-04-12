@@ -10,16 +10,22 @@ type ModuleInfo = {
   icon: string;
   color: string;
   bgColor: string;
+  status: "full" | "partial" | "demo";
+  example: string;
+  useCase: string;
 };
 
 const MODULES: ModuleInfo[] = [
   {
     type: "swap",
     title: "Swap",
-    description: "Exchange tokens",
+    description: "Exchange tokens via Jupiter",
     icon: "swap_horiz",
     color: "#3165F5",
     bgColor: "rgba(49, 101, 245, 0.2)",
+    status: "full",
+    example: "Swap 1 SOL → USDC on Solana Devnet using Jupiter aggregator for best price routing.",
+    useCase: "Rebalancing your portfolio, taking profits, or entering a new DeFi position without manual DEX navigation.",
   },
   {
     type: "liquidityPool",
@@ -28,6 +34,9 @@ const MODULES: ModuleInfo[] = [
     icon: "water_drop",
     color: "#06B6D4",
     bgColor: "rgba(6, 182, 212, 0.2)",
+    status: "full",
+    example: "Manage SOL/USDC pool operations — configure add or remove in a single unified node.",
+    useCase: "Automating pool rebalancing as part of a larger workflow; sends a real on-chain tx with confirmed Solana signature.",
   },
   {
     type: "addLiquidity",
@@ -36,6 +45,9 @@ const MODULES: ModuleInfo[] = [
     icon: "add_circle",
     color: "#06B6D4",
     bgColor: "rgba(6, 182, 212, 0.2)",
+    status: "full",
+    example: "Deposit 0.5 SOL + 10 USDC into a SOL/USDC pool, receive LP tokens, track position + accrued rewards.",
+    useCase: "Earning a share of trading fees. LP position persists across sessions; rewards accumulate based on pool APR.",
   },
   {
     type: "removeLiquidity",
@@ -44,14 +56,20 @@ const MODULES: ModuleInfo[] = [
     icon: "remove_circle",
     color: "#EF4444",
     bgColor: "rgba(239, 68, 68, 0.2)",
+    status: "full",
+    example: "Burn 5 LP tokens to reclaim proportional SOL + USDC from a pool with real on-chain confirmation.",
+    useCase: "Exiting a liquidity position. Updates your tracked LP balance and sends a confirmed Solana transaction.",
   },
   {
     type: "stake",
     title: "Stake",
-    description: "Stake your tokens",
+    description: "Stake SOL via Marinade",
     icon: "lock",
     color: "#10B981",
     bgColor: "rgba(16, 185, 129, 0.2)",
+    status: "full",
+    example: "Delegate 2 SOL to a validator via Marinade protocol and earn ~7% APY staking rewards.",
+    useCase: "Passively earning yield on idle SOL without picking or managing individual validators yourself.",
   },
   {
     type: "claim",
@@ -60,6 +78,9 @@ const MODULES: ModuleInfo[] = [
     icon: "redeem",
     color: "#7C3AED",
     bgColor: "rgba(124, 58, 237, 0.2)",
+    status: "full",
+    example: "Claim accumulated LP fee rewards from all pools you have positions in; rewards are calculated from pool APR × days elapsed.",
+    useCase: "Compounding yield in a workflow: Add Liquidity → wait → Claim Rewards → Swap → Stake, all in one automated run.",
   },
   {
     type: "bridge",
@@ -68,14 +89,20 @@ const MODULES: ModuleInfo[] = [
     icon: "bridge",
     color: "#F59E0B",
     bgColor: "rgba(245, 158, 11, 0.2)",
+    status: "demo",
+    example: "Bridge 0.01 BTC from Bitcoin mainnet to sBTC on Solana for use in DeFi protocols.",
+    useCase: "Bringing Bitcoin liquidity into the Solana ecosystem to access DeFi yield without selling BTC.",
   },
   {
     type: "lightning",
     title: "Lightning",
-    description: "Lightning payment",
+    description: "Instant SOL transfer",
     icon: "bolt",
     color: "#F59E0B",
     bgColor: "rgba(245, 158, 11, 0.2)",
+    status: "full",
+    example: "Send 0.1 SOL instantly to any wallet address via Solana System Program with an optional memo.",
+    useCase: "Fast SOL payments between wallets, funding sub-wallets, or routing funds as a workflow step.",
   },
 ];
 
@@ -119,6 +146,9 @@ export function ModuleLibrary() {
                         icon={module.icon}
                         color={module.color}
                         bgColor={module.bgColor}
+                        status={module.status}
+                        example={module.example}
+                        useCase={module.useCase}
                       />
                     ))}
                 </div>

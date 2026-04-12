@@ -81,6 +81,38 @@ export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
 
   // Use mock swap on devnet or if forced
   if (clusterParam === 'devnet' || forceMock) {
+    // ── CPMM path: check if a real Raydium pool exists for this pair ──────────
+    // This covers custom tokens the user created and pooled via createCustomTokenPool()
+    if (!forceMock) {
+      const { getCustomPoolByMints, swapInCpmmPool } = await import('./raydiumDevnet');
+      const cpmmPool = getCustomPoolByMints(inputMint, outputMint);
+      if (cpmmPool) {
+        console.log('[jupiterSwap] Found custom CPMM pool — using real devnet swap');
+        try {
+          const result = await swapInCpmmPool({
+            poolId: cpmmPool.poolId,
+            inputMintAddress: inputMint,
+            inputAmount: uiAmount,
+            inputDecimals,
+            slippageBps,
+            fromPubkey: new (await import('@solana/web3.js').then(m => m.PublicKey))(userPublicKey),
+          });
+          return {
+            signature: result.txId,
+            inputMint,
+            outputMint,
+            inputAmount: uiAmount,
+            mode: 'real',
+            message: result.message,
+          };
+        } catch (error: any) {
+          console.warn('[jupiterSwap] CPMM swap failed, falling back to mock:', error?.message);
+          // fall through to mock swap below
+        }
+      }
+    }
+
+    // ── Mock path: standard devnet tokens (SOL, USDC, USDT, BONK) ────────────
     console.log('[jupiterSwap] Using mock swap for devnet...');
 
     // Get output decimals from token info if not provided
@@ -125,25 +157,21 @@ export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
     throw new Error(`Failed to fetch quote: ${errorText}`);
   }
 
-  const quoteJson = await quoteRes.json();
-  if (!quoteJson || !quoteJson.data || quoteJson.data.length === 0) {
-    throw new Error("No routes found");
+  // Jupiter v6 returns the quote object directly (not wrapped in .data[])
+  const quoteResponse = await quoteRes.json();
+  if (!quoteResponse || quoteResponse.error) {
+    throw new Error(quoteResponse?.error || 'No routes found');
   }
 
-  const route = quoteJson.data[0];
-  console.debug('[jupiterSwap] selected route', { route });
-
-  // Ensure destinationWallet is set (use userPublicKey as default)
-  const destWallet = destinationWallet || userPublicKey;
+  console.debug('[jupiterSwap] quote response', { quoteResponse });
 
   // Request swap transaction from Jupiter REST API
   const swapRes = await fetch(JUP_SWAP_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      route,
+      quoteResponse,          // Jupiter v6: use quoteResponse, not route
       userPublicKey,
-      destinationWallet: destWallet,
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
       prioritizationFeeLamports: "auto",

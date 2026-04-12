@@ -347,20 +347,21 @@ export function WorkflowCanvas() {
         }
       }
 
-      // Find and execute Add Liquidity if present (supports multiple LP types)
-      const liquidityNode = nodes.find(n =>
+      // Find and execute ALL liquidity nodes (addLiquidity / removeLiquidity / liquidityPool)
+      const liquidityNodes = nodes.filter(n =>
         n.data?.type === 'addLiquidity' ||
         n.data?.type === 'liquidityPool' ||
         n.data?.type === 'removeLiquidity'
       );
-      if (liquidityNode) {
-        const cfg = (liquidityNode.data?.config || {}) as any;
-        const nodeType = liquidityNode.data?.type;
+      // keep backward-compat reference for hasExecutableNode check below
+      const liquidityNode = liquidityNodes[0] ?? null;
 
-        // Determine action based on node type or config
+      const { handleLiquidityPool } = await import('../lib/solana/liquidityPool');
+
+      for (const lpNode of liquidityNodes) {
+        const cfg = (lpNode.data?.config || {}) as any;
+        const nodeType = lpNode.data?.type;
         const lpAction = cfg.action || (nodeType === 'removeLiquidity' ? 'removeLiquidity' : 'addLiquidity');
-
-        // Get token symbols (support both symbol-based and mint-based config)
         const tokenA = cfg.tokenA || 'SOL';
         const tokenB = cfg.tokenB || 'USDC';
         const amountA = parseFloat(cfg.amountA || '1.0');
@@ -369,90 +370,40 @@ export function WorkflowCanvas() {
         const slippage = parseFloat(cfg.slippage || '1');
 
         try {
-          // Import the LP module
-          const { handleLiquidityPool } = await import('../lib/solana/liquidityPool');
-
           if (lpAction === 'addLiquidity') {
-            toast({ title: 'Adding Liquidity...', description: `Adding ${amountA} ${tokenA} + ${amountB} ${tokenB} to pool (devnet mock)` });
-
-            setNodeExecStatus(liquidityNode.id, 'running');
+            toast({ title: 'Adding Liquidity...', description: `${amountA} ${tokenA} + ${amountB} ${tokenB}` });
+            setNodeExecStatus(lpNode.id, 'running');
             const result = await handleLiquidityPool({
-              action: 'addLiquidity',
-              tokenA,
-              tokenB,
-              amountA,
-              amountB,
-              slippage,
+              action: 'addLiquidity', tokenA, tokenB, amountA, amountB, slippage,
               fromPubkey: new PublicKey(userPublicKey),
             });
-
-            toast({
-              title: 'Liquidity Added',
-              description: result.message || `Received ${result.lpTokensReceived?.toFixed(4)} LP tokens`,
-            });
-            setNodeExecStatus(liquidityNode.id, 'success');
-
+            toast({ title: 'Liquidity Added ✓', description: result.message });
+            setNodeExecStatus(lpNode.id, 'success');
             executionActions.push({
-              type: 'addLiquidity',
-              status: 'success',
-              message: result.message || `Added ${amountA} ${tokenA} + ${amountB} ${tokenB} to pool`,
-              details: {
-                tokenA,
-                tokenB,
-                amountA,
-                amountB,
-                lpTokensReceived: result.lpTokensReceived,
-                poolAddress: result.poolAddress,
-                mode: result.mode,
-              },
+              type: 'addLiquidity', status: 'success', message: result.message,
+              signature: result.signature,
+              details: { tokenA, tokenB, amountA, amountB, lpTokensReceived: result.lpTokensReceived, poolAddress: result.poolAddress, mode: result.mode },
             });
           } else {
-            toast({ title: 'Removing Liquidity...', description: `Removing ${lpTokenAmount} LP tokens from ${tokenA}/${tokenB} pool (devnet mock)` });
-
-            setNodeExecStatus(liquidityNode.id, 'running');
+            toast({ title: 'Removing Liquidity...', description: `${lpTokenAmount} LP tokens from ${tokenA}/${tokenB}` });
+            setNodeExecStatus(lpNode.id, 'running');
             const result = await handleLiquidityPool({
-              action: 'removeLiquidity',
-              tokenA,
-              tokenB,
-              lpTokenAmount,
-              slippage,
+              action: 'removeLiquidity', tokenA, tokenB, lpTokenAmount, slippage,
               fromPubkey: new PublicKey(userPublicKey),
             });
-
-            toast({
-              title: 'Liquidity Removed',
-              description: result.message || `Received ${result.tokenAReceived?.toFixed(4)} ${tokenA} + ${result.tokenBReceived?.toFixed(4)} ${tokenB}`,
-            });
-            setNodeExecStatus(liquidityNode.id, 'success');
-
+            toast({ title: 'Liquidity Removed ✓', description: result.message });
+            setNodeExecStatus(lpNode.id, 'success');
             executionActions.push({
-              type: 'removeLiquidity',
-              status: 'success',
-              message: result.message || `Removed ${lpTokenAmount} LP tokens from ${tokenA}/${tokenB} pool`,
-              details: {
-                tokenA,
-                tokenB,
-                lpTokenAmount,
-                tokenAReceived: result.tokenAReceived,
-                tokenBReceived: result.tokenBReceived,
-                poolAddress: result.poolAddress,
-                mode: result.mode,
-              },
+              type: 'removeLiquidity', status: 'success', message: result.message,
+              signature: result.signature,
+              details: { tokenA, tokenB, lpTokenAmount, tokenAReceived: result.tokenAReceived, tokenBReceived: result.tokenBReceived, poolAddress: result.poolAddress, mode: result.mode },
             });
           }
         } catch (lpError: any) {
           console.error('Liquidity operation error:', lpError);
-          toast({
-            title: 'Liquidity Operation Failed',
-            description: lpError.message || 'Unknown error during liquidity operation',
-            variant: 'destructive',
-          });
-          executionActions.push({
-            type: lpAction as 'addLiquidity' | 'removeLiquidity',
-            status: 'failed',
-            message: lpError.message || 'Unknown error during liquidity operation',
-          });
-          setNodeExecStatus(liquidityNode.id, 'failed');
+          toast({ title: 'Liquidity Operation Failed', description: lpError.message || 'Unknown error', variant: 'destructive' });
+          executionActions.push({ type: lpAction as any, status: 'failed', message: lpError.message || 'Unknown error' });
+          setNodeExecStatus(lpNode.id, 'failed');
           return;
         }
       }
@@ -611,10 +562,44 @@ export function WorkflowCanvas() {
         }
       }
 
+      // Find and execute ALL Claim Rewards nodes
+      const claimNodes = nodes.filter(n => n.data?.type === 'claim');
+      const claimNode = claimNodes[0] ?? null;
+
+      const { handleClaimRewards } = await import('../lib/solana/claimRewards');
+
+      for (const cNode of claimNodes) {
+        const cfg = (cNode.data?.config || {}) as any;
+        const poolAddress = cfg.poolAddress || undefined; // undefined = claim all pools
+
+        try {
+          toast({ title: 'Claiming Rewards...', description: poolAddress ? `From pool ${poolAddress.slice(0, 8)}…` : 'From all LP positions' });
+          setNodeExecStatus(cNode.id, 'running');
+          const summary = await handleClaimRewards({
+            fromPubkey: new PublicKey(userPublicKey),
+            poolAddress,
+            autoReinvest: cfg.autoReinvest === true,
+          });
+          toast({ title: 'Rewards Claimed ✓', description: summary.message });
+          setNodeExecStatus(cNode.id, 'success');
+          executionActions.push({
+            type: 'claim', status: 'success', message: summary.message,
+            signature: summary.signature,
+            details: { totalRewardUSD: summary.totalRewardUSD, pools: summary.results.length },
+          });
+        } catch (claimErr: any) {
+          console.error('Claim rewards error:', claimErr);
+          toast({ title: 'Claim Rewards Failed', description: claimErr.message || 'Unknown error', variant: 'destructive' });
+          executionActions.push({ type: 'claim', status: 'failed', message: claimErr.message || 'Unknown error' });
+          setNodeExecStatus(cNode.id, 'failed');
+          return;
+        }
+      }
+
       // If no executable nodes found
-      const hasExecutableNode = swapNode || liquidityNode || stakeNode || lightningNode;
+      const hasExecutableNode = swapNode || liquidityNode || stakeNode || lightningNode || claimNode;
       if (!hasExecutableNode) {
-        toast({ title: 'No Executable Actions', description: 'Add Swap, Add Liquidity, or Stake modules to execute.', variant: 'destructive' });
+        toast({ title: 'No Executable Actions', description: 'Add Swap, Liquidity, Stake, Claim Rewards, or Lightning modules to execute.', variant: 'destructive' });
         return;
       }
 
