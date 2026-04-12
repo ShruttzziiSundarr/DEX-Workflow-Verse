@@ -6,6 +6,7 @@ import { WalletConnector } from "@/components/WalletConnector";
 import { ModuleLibrary } from "@/components/ModuleLibrary";
 import { WorkflowCanvasWrapper } from "@/components/WorkflowCanvas";
 import { ConfigPanel } from "@/components/ConfigPanel";
+import { OperationManual } from "@/components/OperationManual";
 import { Button } from "@/components/ui/button";
 import { useWorkflow } from "@/hooks/use-workflow";
 import { workflowService } from "@/lib/workflow-service";
@@ -144,6 +145,19 @@ export default function Home() {
   const [savedWorkflows, setSavedWorkflows] = useState<StoredWorkflow[]>([]);
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [isLoading, setIsLoading] = useState<number | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSelectedType, setManualSelectedType] = useState<string | undefined>();
+
+  // Listen for open-operation-manual events from TimeComparisonPanel & other components
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setManualSelectedType(typeof detail === 'string' ? detail : undefined);
+      setManualOpen(true);
+    };
+    window.addEventListener('open-operation-manual', handler);
+    return () => window.removeEventListener('open-operation-manual', handler);
+  }, []);
 
   const handleSave = async () => {
     await saveWorkflow();
@@ -279,6 +293,15 @@ export default function Home() {
               variant="ghost"
               size="sm"
               className="flex items-center gap-1.5 text-sm"
+              onClick={() => setManualOpen(true)}
+            >
+              <span className="material-icons text-sm">menu_book</span>
+              Help
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-1.5 text-sm"
               onClick={() => window.dispatchEvent(new CustomEvent('open-execution-history'))}
             >
               <span className="material-icons text-sm">history</span>
@@ -332,6 +355,13 @@ export default function Home() {
           </Button>
         </div>
       </div>
+
+      {/* Operation Manual Dialog */}
+      <OperationManual
+        open={manualOpen}
+        onClose={() => setManualOpen(false)}
+        selectedType={manualSelectedType}
+      />
     </WalletProvider>
   );
 }

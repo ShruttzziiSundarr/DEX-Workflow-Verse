@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { OperationManual } from '@/components/OperationManual';
 import { WalletProvider, useWallet } from '@/pages/home';
 import { WalletConnector } from '@/components/WalletConnector';
 import { getUserPositionsFromStorage } from '@/lib/solana/liquidityPool';
@@ -25,6 +26,7 @@ import {
   Activity,
   AlertCircle,
   Timer,
+  BookOpen,
 } from 'lucide-react';
 
 // Reverse-lookup map for devnet mock pool addresses → human-readable names
@@ -531,6 +533,20 @@ function DashboardContent() {
 // Page wrapper (own WalletProvider + consistent header)
 // ─────────────────────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSelectedType, setManualSelectedType] = useState<string | undefined>();
+
+  // Listen for open-operation-manual events
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      setManualSelectedType(typeof detail === 'string' ? detail : undefined);
+      setManualOpen(true);
+    };
+    window.addEventListener('open-operation-manual', handler);
+    return () => window.removeEventListener('open-operation-manual', handler);
+  }, []);
+
   return (
     <WalletProvider>
       <div className="min-h-screen bg-background text-foreground">
@@ -548,6 +564,14 @@ export default function Dashboard() {
                 <Button variant="ghost" size="sm" className="text-primary font-semibold" disabled>
                   Dashboard
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setManualOpen(true)}
+                >
+                  <BookOpen className="h-4 w-4 mr-1" />
+                  Help
+                </Button>
               </nav>
             </div>
             <WalletConnector />
@@ -556,6 +580,13 @@ export default function Dashboard() {
         <main>
           <DashboardContent />
         </main>
+
+        {/* Operation Manual Dialog */}
+        <OperationManual
+          open={manualOpen}
+          onClose={() => setManualOpen(false)}
+          selectedType={manualSelectedType}
+        />
       </div>
     </WalletProvider>
   );

@@ -1,7 +1,6 @@
 import {
   Connection,
   PublicKey,
-  LAMPORTS_PER_SOL,
   clusterApiUrl,
   SystemProgram,
   Transaction,
@@ -408,10 +407,13 @@ export async function handleLiquidityPool({
       if (!amountA || !amountB) throw new Error('Both token amounts are required');
       const pools = await raydium.api.fetchPoolByMints({ mint1: tokenA, mint2: tokenB });
       if (!pools?.length) throw new Error(`No pool found for ${tokenA}/${tokenB}`);
+      // Use per-token decimal places — USDC is 6 decimals, not 9 (LAMPORTS_PER_SOL)
+      const rawA = Math.floor(amountA * Math.pow(10, mintADecimals));
+      const rawB = Math.floor(amountB * Math.pow(10, mintBDecimals));
       const { execute } = await raydium.liquidity.addLiquidity({
         poolInfo: pools[0],
-        amountInA: amountA * LAMPORTS_PER_SOL,
-        amountInB: amountB * LAMPORTS_PER_SOL,
+        amountInA: rawA,
+        amountInB: rawB,
         slippage: slippage / 100,
       });
       const signature = await execute();
@@ -421,9 +423,12 @@ export async function handleLiquidityPool({
     if (!lpTokenAmount) throw new Error('LP token amount is required');
     const pools = await raydium.api.fetchPoolByMints({ mint1: tokenA, mint2: tokenB });
     if (!pools?.length) throw new Error(`No pool found for ${tokenA}/${tokenB}`);
+    // LP token decimals come from the pool's lpMint; fall back to 9 if not available
+    const lpDecimals: number = (pools[0] as any)?.lpMint?.decimals ?? 9;
+    const rawLP = Math.floor(lpTokenAmount * Math.pow(10, lpDecimals));
     const { execute } = await raydium.liquidity.removeLiquidity({
       poolInfo: pools[0],
-      amountIn: lpTokenAmount * LAMPORTS_PER_SOL,
+      amountIn: rawLP,
       slippage: slippage / 100,
     });
     const signature = await execute();
@@ -549,8 +554,26 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<PoolI
     if (!pool) throw new Error(`Pool ${tokenA}/${tokenB} not found`);
     return pool;
   }
-  // mainnet omitted for brevity — same Raydium fetch as before
-  throw new Error('Mainnet getPoolInfo not implemented in this build');
+  // mainnet: fetch live pool data from Raydium API
+  const { Raydium } = await import(/* @vite-ignore */ RAYDIUM_PKG).catch(() => {
+    throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
+  });
+  const connection = getConnection('mainnet-beta');
+  const raydium = await (Raydium as any).load({ connection, cluster: 'mainnet-beta', disableFeatureCheck: true });
+  const pools = await raydium.api.fetchPoolByMints({ mint1: tokenA, mint2: tokenB });
+  if (!pools?.length) throw new Error(`No pool found for ${tokenA}/${tokenB} on mainnet`);
+  const p = pools[0];
+  return {
+    poolAddress: p.id,
+    tokenA: p.mintA?.symbol || tokenA,
+    tokenB: p.mintB?.symbol || tokenB,
+    reserveA: Number(p.mintAmountA ?? 0),
+    reserveB: Number(p.mintAmountB ?? 0),
+    lpSupply:  Number(p.lpAmount   ?? 0),
+    apr:       Number(p.day?.apr   ?? 0),
+    fee:       Number(p.feeRate    ?? 0.25),
+    mode:      'real',
+  };
 }
 
 export async function getUserLPPositions(walletPubkey: PublicKey): Promise<UserLPPosition[]> {

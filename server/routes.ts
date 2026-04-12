@@ -574,10 +574,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
    * Note: Real transactions should be executed client-side with wallet signing
    */
   app.post("/api/liquidity", async (req: Request, res: Response) => {
-    const { action, tokenA, tokenB, amountA, amountB, lpTokenAmount, slippage, fromPubkey } = req.body;
+    const { action, tokenA, tokenB, amountA, amountB, lpTokenAmount, slippage, fromPubkey, cluster } = req.body;
     try {
       if (!fromPubkey) {
         return res.status(400).json({ success: false, error: 'Wallet public key is required' });
+      }
+
+      // Mainnet LP operations must be executed client-side via Raydium SDK with wallet signing.
+      // This endpoint only handles devnet simulation — it has no access to the user's wallet.
+      if (cluster === 'mainnet-beta') {
+        return res.status(400).json({
+          success: false,
+          error: 'Mainnet liquidity operations must be executed client-side via handleLiquidityPool(). ' +
+                 'This server endpoint only handles devnet simulation.',
+        });
       }
 
       const validActions = ['addLiquidity', 'removeLiquidity'];

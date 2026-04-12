@@ -191,6 +191,19 @@ export function TimeComparisonPanel({
           </div>
         </div>
 
+        {/* Operation Guides Button */}
+        <div className="pt-6">
+          <Button 
+            variant="outline" 
+            className="w-full mb-6"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('open-operation-manual'));
+            }}
+          >
+            📚 View Operation Guides & Documentation
+          </Button>
+        </div>
+
         {/* Per-action breakdown */}
         {rows.length > 0 && (
           <div className="space-y-2">
@@ -222,6 +235,16 @@ export function TimeComparisonPanel({
                           <p className="text-xs text-muted-foreground leading-tight mt-0.5">
                             {row.description}
                           </p>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="mt-1 h-6 px-2 text-xs"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('open-operation-manual', { detail: row.type }));
+                            }}
+                          >
+                            View Guide
+                          </Button>
                         </td>
                         <td className="px-4 py-3 text-center text-red-400 font-medium">
                           {row.traditionalLabel}

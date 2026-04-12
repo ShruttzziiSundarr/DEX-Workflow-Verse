@@ -1,5 +1,5 @@
-import { Connection, VersionedTransaction, clusterApiUrl, PublicKey, Transaction } from "@solana/web3.js";
-import { executeMockSwap, getMockSwapQuote, type MockSwapResult } from './mockJupiterService';
+import { Connection, VersionedTransaction, clusterApiUrl } from "@solana/web3.js";
+import { executeMockSwap } from './mockJupiterService';
 import { getDevnetTokenByAddress } from './jupiterDevnetUtils';
 
 const JUP_QUOTE_URL = "https://quote-api.jup.ag/v6/quote";
@@ -238,77 +238,5 @@ export const DEVNET_MINTS = {
   USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // Verified USDC devnet
   USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // Verified USDT devnet
 };
-
-// Add Liquidity function for Raydium pools
-export async function addLiquidity(params: {
-  tokenAMint: string;
-  tokenBMint: string;
-  amountA: number;
-  amountB: number;
-  tokenADecimals: number;
-  tokenBDecimals: number;
-  slippageBps: number;
-  userPublicKey: string;
-}) {
-  const { tokenAMint, tokenBMint, amountA, amountB, tokenADecimals, tokenBDecimals, slippageBps, userPublicKey } = params;
-
-  // For demo purposes, we'll simulate the add liquidity transaction
-  // In a real implementation, you would:
-  // 1. Find or create the liquidity pool
-  // 2. Calculate the required amounts based on current pool state
-  // 3. Create the add liquidity transaction
-  // 4. Sign and send the transaction
-
-  try {
-    // Simulate finding pool information
-    const poolInfo = await findOrCreatePool(tokenAMint, tokenBMint);
-    
-    // Calculate amounts with slippage
-    const minAmountA = Math.floor(amountA * (10000 - slippageBps) / 10000);
-    const minAmountB = Math.floor(amountB * (10000 - slippageBps) / 10000);
-
-    // For now, we'll create a mock transaction that represents adding liquidity
-    // In production, this would be a real Raydium transaction
-    const mockTransaction = new Transaction();
-    
-    // Mock transaction instructions would go here
-    // For demo purposes, we'll simulate success
-    
-    console.log(`Adding liquidity: ${amountA} of token A, ${amountB} of token B to pool ${poolInfo.poolId}`);
-    
-    // Simulate transaction success
-    const mockSignature = "mock_liquidity_signature_" + Date.now();
-    
-    return {
-      signature: mockSignature,
-      poolId: poolInfo.poolId,
-      liquidityAmount: Math.min(amountA, amountB), // Simplified calculation
-      tokenAAmount: amountA,
-      tokenBAmount: amountB,
-    };
-  } catch (error) {
-    throw new Error(`Failed to add liquidity: ${error}`);
-  }
-}
-
-// Helper function to find or create a pool (simplified for demo)
-async function findOrCreatePool(tokenAMint: string, tokenBMint: string) {
-  // In a real implementation, you would:
-  // 1. Check if a pool exists for this token pair
-  // 2. If not, create a new pool
-  // 3. Return pool information including pool ID, reserves, etc.
-  
-  // For demo purposes, return mock pool info
-  return {
-    poolId: `pool_${tokenAMint.slice(0, 8)}_${tokenBMint.slice(0, 8)}`,
-    tokenAMint,
-    tokenBMint,
-    reserves: {
-      tokenA: 1000000, // Mock reserves
-      tokenB: 50000000,
-    },
-    lpMint: `lp_${tokenAMint.slice(0, 8)}_${tokenBMint.slice(0, 8)}`,
-  };
-}
 
 
