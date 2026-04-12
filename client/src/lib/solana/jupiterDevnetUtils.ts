@@ -5,6 +5,78 @@
 
 import { DEVNET_SAFE_MINTS, getDevnetSafeTokens } from './devnetValidator';
 
+// ─── Live price feed ──────────────────────────────────────────────────────────
+
+const JUP_PRICE_URL = 'https://price.jup.ag/v4/price';
+const PRICE_CACHE_TTL = 60_000; // 60 s
+
+// Devnet mint → mainnet mint (Jupiter price API uses mainnet addresses)
+const DEVNET_TO_MAINNET: Record<string, string> = {
+  'So11111111111111111111111111111111111111112':  'So11111111111111111111111111111111111111112',  // SOL
+  '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU': 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS': 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',  // USDT
+  'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263': 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', // BONK
+};
+
+// mainnet mint → { price, fetchedAt }
+const priceCache: Record<string, { price: number; fetchedAt: number }> = {};
+
+/**
+ * Fetch live USD prices for all supported tokens from Jupiter Price API v4.
+ * Results are cached for 60 s; stale entries are refreshed in bulk.
+ * Falls back silently — callers should handle a zero/undefined return.
+ */
+export async function fetchLivePrices(): Promise<Record<string, number>> {
+  const now = Date.now();
+  const mainnetMints = Object.values(DEVNET_TO_MAINNET);
+  const stale = mainnetMints.some(m => !priceCache[m] || now - priceCache[m].fetchedAt >= PRICE_CACHE_TTL);
+
+  if (!stale) {
+    return Object.fromEntries(mainnetMints.map(m => [m, priceCache[m].price]));
+  }
+
+  const ids = mainnetMints.join(',');
+  const res = await fetch(`${JUP_PRICE_URL}?ids=${ids}`);
+  if (!res.ok) throw new Error(`Jupiter price API ${res.status}`);
+
+  const json = await res.json();
+  const out: Record<string, number> = {};
+  for (const [mint, data] of Object.entries(json.data ?? {})) {
+    const price = (data as any).price as number;
+    out[mint] = price;
+    priceCache[mint] = { price, fetchedAt: now };
+  }
+  return out;
+}
+
+/**
+ * Get the live USD price for a devnet token mint.
+ * Falls back to the hardcoded MOCK_PRICES table if the API is unreachable.
+ */
+export async function getDevnetTokenPriceLive(devnetMint: string): Promise<number> {
+  const mainnetMint = DEVNET_TO_MAINNET[devnetMint];
+  if (!mainnetMint) return MOCK_PRICES[devnetMint] ?? 0;
+  try {
+    const prices = await fetchLivePrices();
+    return prices[mainnetMint] ?? MOCK_PRICES[devnetMint] ?? 0;
+  } catch {
+    return MOCK_PRICES[devnetMint] ?? 0;
+  }
+}
+
+/**
+ * Compute the live exchange rate between two devnet token mints.
+ * Falls back to the hardcoded rate if the price API is unreachable.
+ */
+export async function getDevnetExchangeRateLive(inputMint: string, outputMint: string): Promise<number> {
+  const [inputPrice, outputPrice] = await Promise.all([
+    getDevnetTokenPriceLive(inputMint),
+    getDevnetTokenPriceLive(outputMint),
+  ]);
+  if (!inputPrice || !outputPrice) return 0;
+  return inputPrice / outputPrice;
+}
+
 export interface JupiterToken {
   address: string;
   chainId: number;

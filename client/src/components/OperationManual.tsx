@@ -783,8 +783,8 @@ export function OperationManual({ open, onClose, selectedType }: OperationManual
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-[960px] p-0 gap-0 overflow-hidden" style={{ height: '82vh' }}>
-        <div className="flex h-full">
+      <DialogContent className="max-w-[960px] p-0 gap-0 overflow-hidden flex flex-col" style={{ height: '82vh', maxHeight: '82vh' }}>
+        <div className="flex flex-1 min-h-0">
           {/* ── Left: Table of Contents ─────────────────────────────── */}
           <div className="w-52 shrink-0 border-r border-border bg-muted/30 flex flex-col h-full">
             {/* Book title */}

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, jsonb, timestamp, doublePrecision, bigint, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -30,6 +30,23 @@ export const workflowActions = pgTable("workflow_actions", {
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+// LP positions table — persists user liquidity positions across sessions
+export const lpPositions = pgTable("lp_positions", {
+  id: serial("id").primaryKey(),
+  walletAddress: text("wallet_address").notNull(),
+  poolAddress: text("pool_address").notNull(),
+  lpBalance: doublePrecision("lp_balance").notNull().default(0),
+  sharePercentage: doublePrecision("share_percentage").notNull().default(0),
+  tokenAValue: doublePrecision("token_a_value").notNull().default(0),
+  tokenBValue: doublePrecision("token_b_value").notNull().default(0),
+  valueUsd: doublePrecision("value_usd").notNull().default(0),
+  createdAt: bigint("created_at", { mode: 'number' }).notNull(),
+  lastClaimedAt: bigint("last_claimed_at", { mode: 'number' }).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  walletPoolUniq: uniqueIndex("lp_positions_wallet_pool_uniq").on(table.walletAddress, table.poolAddress),
+}));
 
 // New table for workflow execution history
 export const workflowExecutions = pgTable("workflow_executions", {
@@ -71,6 +88,8 @@ export const insertWorkflowExecutionSchema = createInsertSchema(workflowExecutio
   status: true,
 });
 
+export const insertLpPositionSchema = createInsertSchema(lpPositions).omit({ id: true, updatedAt: true });
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
@@ -83,6 +102,9 @@ export type WorkflowAction = typeof workflowActions.$inferSelect;
 export type InsertWorkflowExecution = z.infer<typeof insertWorkflowExecutionSchema>;
 export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
 
+export type InsertLpPosition = z.infer<typeof insertLpPositionSchema>;
+export type LpPosition = typeof lpPositions.$inferSelect;
+
 // Module types for workflow
 export const ModuleTypeEnum = z.enum([
   "swap",
@@ -92,7 +114,10 @@ export const ModuleTypeEnum = z.enum([
   "stake",
   "claim",
   "bridge",
-  "lightning"
+  "lightning",
+  "orcaSwap",
+  "raydiumSwap",
+  "tokenCreation",
 ]);
 
 export type ModuleType = z.infer<typeof ModuleTypeEnum>;

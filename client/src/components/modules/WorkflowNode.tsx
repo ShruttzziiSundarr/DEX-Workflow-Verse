@@ -27,6 +27,12 @@ const getNodeStyles = (type: ModuleType) => {
       return { backgroundColor: "rgba(245, 158, 11, 0.2)", borderLeft: "4px solid #F59E0B", icon: "bridge", iconColor: "#F59E0B" };
     case "lightning":
       return { backgroundColor: "rgba(245, 158, 11, 0.2)", borderLeft: "4px solid #F59E0B", icon: "bolt", iconColor: "#F59E0B" };
+    case "orcaSwap":
+      return { backgroundColor: "rgba(6, 214, 160, 0.2)", borderLeft: "4px solid #06D6A0", icon: "waves", iconColor: "#06D6A0" };
+    case "raydiumSwap":
+      return { backgroundColor: "rgba(95, 69, 255, 0.2)", borderLeft: "4px solid #5F45FF", icon: "hub", iconColor: "#5F45FF" };
+    case "tokenCreation":
+      return { backgroundColor: "rgba(249, 115, 22, 0.2)", borderLeft: "4px solid #F97316", icon: "toll", iconColor: "#F97316" };
     default:
       return { backgroundColor: "rgba(75, 85, 99, 0.2)", borderLeft: "4px solid #4B5563", icon: "settings", iconColor: "#4B5563" };
   }
@@ -145,6 +151,33 @@ const getNodeContent = (type: ModuleType, config: any) => {
           <div className="flex justify-between items-center">
             <span>Amount:</span>
             <span className="font-mono">{config?.amount || "0.01"} SOL</span>
+          </div>
+        </>
+      );
+    case "orcaSwap":
+    case "raydiumSwap":
+      return (
+        <>
+          <div className="flex justify-between items-center mb-1">
+            <span>From:</span>
+            <span className="font-mono">{config?.sourceToken || "SOL"}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>To:</span>
+            <span className="font-mono">{config?.targetToken || "USDC"}</span>
+          </div>
+        </>
+      );
+    case "tokenCreation":
+      return (
+        <>
+          <div className="flex justify-between items-center mb-1">
+            <span>Symbol:</span>
+            <span className="font-mono">{config?.symbol || "TKN"}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Supply:</span>
+            <span className="font-mono">{config?.initialSupply || "1000000"}</span>
           </div>
         </>
       );

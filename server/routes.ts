@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertWorkflowSchema, insertWorkflowActionSchema, insertWorkflowExecutionSchema, ExecutionStatusEnum } from "@shared/schema";
+import type { InsertLpPosition } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 
@@ -760,28 +761,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   /**
    * GET /api/liquidity/positions/:walletAddress
-   * Get user's LP positions (mock data for devnet)
+   * Get user's LP positions from DB
    */
   app.get("/api/liquidity/positions/:walletAddress", async (req: Request, res: Response) => {
     try {
-      const walletAddress = req.params.walletAddress;
+      const { walletAddress } = req.params;
       if (!walletAddress) {
         return res.status(400).json({ success: false, error: 'Wallet address is required' });
       }
-
-      // Return empty positions for mock (positions are tracked client-side in memory)
-      res.json({
-        success: true,
-        positions: [],
-        mode: 'mock',
-        message: 'LP positions are tracked client-side for devnet mock mode',
-      });
+      const rows = await storage.getLPPositions(walletAddress);
+      const positions = rows.map(r => ({
+        poolAddress: r.poolAddress,
+        lpBalance: r.lpBalance,
+        sharePercentage: r.sharePercentage,
+        tokenAValue: r.tokenAValue,
+        tokenBValue: r.tokenBValue,
+        valueUSD: r.valueUsd,
+        createdAt: r.createdAt,
+        lastClaimedAt: r.lastClaimedAt,
+      }));
+      res.json({ success: true, positions });
     } catch (error) {
       console.error('Error fetching LP positions:', error);
-      res.status(500).json({
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      });
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /**
+   * POST /api/liquidity/positions/:walletAddress
+   * Upsert a single LP position for a wallet (called client-side after add/remove/claim)
+   */
+  app.post("/api/liquidity/positions/:walletAddress", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress } = req.params;
+      const { poolAddress, lpBalance, sharePercentage, tokenAValue, tokenBValue, valueUSD, createdAt, lastClaimedAt } = req.body;
+      if (!walletAddress || !poolAddress) {
+        return res.status(400).json({ success: false, error: 'walletAddress and poolAddress are required' });
+      }
+      const now = Date.now();
+      const position: InsertLpPosition = {
+        walletAddress,
+        poolAddress,
+        lpBalance: Number(lpBalance) || 0,
+        sharePercentage: Number(sharePercentage) || 0,
+        tokenAValue: Number(tokenAValue) || 0,
+        tokenBValue: Number(tokenBValue) || 0,
+        valueUsd: Number(valueUSD) || 0,
+        createdAt: Number(createdAt) || now,
+        lastClaimedAt: Number(lastClaimedAt) || now,
+      };
+      const row = await storage.upsertLPPosition(position);
+      res.json({ success: true, position: row });
+    } catch (error) {
+      console.error('Error upserting LP position:', error);
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  /**
+   * DELETE /api/liquidity/positions/:walletAddress/:poolAddress
+   * Remove a closed LP position from DB
+   */
+  app.delete("/api/liquidity/positions/:walletAddress/:poolAddress", async (req: Request, res: Response) => {
+    try {
+      const { walletAddress, poolAddress } = req.params;
+      if (!walletAddress || !poolAddress) {
+        return res.status(400).json({ success: false, error: 'walletAddress and poolAddress are required' });
+      }
+      const deleted = await storage.deleteLPPosition(walletAddress, poolAddress);
+      res.json({ success: true, deleted });
+    } catch (error) {
+      console.error('Error deleting LP position:', error);
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 

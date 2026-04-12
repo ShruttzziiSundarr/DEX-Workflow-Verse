@@ -1,7 +1,8 @@
-import { users, workflows, workflowActions, workflowExecutions,
+import { users, workflows, workflowActions, workflowExecutions, lpPositions,
   type User, type InsertUser, type Workflow, type InsertWorkflow,
   type WorkflowAction, type InsertWorkflowAction,
   type WorkflowExecution, type InsertWorkflowExecution,
+  type LpPosition, type InsertLpPosition,
   type ExecutionStatus
 } from "@shared/schema";
 import { db } from "./db";
@@ -31,6 +32,11 @@ export interface IStorage {
   getWorkflowExecution(id: number): Promise<WorkflowExecution | undefined>;
   createWorkflowExecution(execution: InsertWorkflowExecution): Promise<WorkflowExecution>;
   updateWorkflowExecutionStatus(id: number, status: ExecutionStatus, result?: Record<string, any>, error?: string): Promise<WorkflowExecution | undefined>;
+
+  // LP Position methods
+  getLPPositions(walletAddress: string): Promise<LpPosition[]>;
+  upsertLPPosition(position: InsertLpPosition): Promise<LpPosition>;
+  deleteLPPosition(walletAddress: string, poolAddress: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -187,6 +193,45 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updatedExecution || undefined;
+  }
+
+  // LP Position methods
+  async getLPPositions(walletAddress: string): Promise<LpPosition[]> {
+    return await db
+      .select()
+      .from(lpPositions)
+      .where(eq(lpPositions.walletAddress, walletAddress));
+  }
+
+  async upsertLPPosition(position: InsertLpPosition): Promise<LpPosition> {
+    const [row] = await db
+      .insert(lpPositions)
+      .values(position)
+      .onConflictDoUpdate({
+        target: [lpPositions.walletAddress, lpPositions.poolAddress],
+        set: {
+          lpBalance: position.lpBalance,
+          sharePercentage: position.sharePercentage,
+          tokenAValue: position.tokenAValue,
+          tokenBValue: position.tokenBValue,
+          valueUsd: position.valueUsd,
+          lastClaimedAt: position.lastClaimedAt,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return row;
+  }
+
+  async deleteLPPosition(walletAddress: string, poolAddress: string): Promise<boolean> {
+    const [deleted] = await db
+      .delete(lpPositions)
+      .where(and(
+        eq(lpPositions.walletAddress, walletAddress),
+        eq(lpPositions.poolAddress, poolAddress),
+      ))
+      .returning();
+    return !!deleted;
   }
 }
 

@@ -117,7 +117,7 @@ const POOL_BY_ADDRESS: Record<string, PoolInfo> = Object.fromEntries(
   Object.values(MOCK_POOLS).map(p => [p.poolAddress, p])
 );
 
-// ─── localStorage helpers ─────────────────────────────────────────────────────
+// ─── localStorage helpers (write-through cache) ───────────────────────────────
 
 const LP_POSITIONS_KEY = 'dex_lp_positions';
 
@@ -138,6 +138,33 @@ function saveStoredPositions(positions: Record<string, UserLPPosition[]>) {
 
 export function getUserPositionsFromStorage(walletAddress: string): UserLPPosition[] {
   return loadStoredPositions()[walletAddress] || [];
+}
+
+// ─── API sync helpers ─────────────────────────────────────────────────────────
+
+/** Fire-and-forget: push a single position to the backend DB. */
+async function syncPositionToAPI(walletAddress: string, position: UserLPPosition): Promise<void> {
+  try {
+    await fetch(`/api/liquidity/positions/${encodeURIComponent(walletAddress)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(position),
+    });
+  } catch (e) {
+    console.warn('[LP] Failed to sync position to server:', e);
+  }
+}
+
+/** Fire-and-forget: remove a closed position from the backend DB. */
+async function deletePositionFromAPI(walletAddress: string, poolAddress: string): Promise<void> {
+  try {
+    await fetch(
+      `/api/liquidity/positions/${encodeURIComponent(walletAddress)}/${encodeURIComponent(poolAddress)}`,
+      { method: 'DELETE' },
+    );
+  } catch (e) {
+    console.warn('[LP] Failed to delete position from server:', e);
+  }
 }
 
 // ─── Cluster helpers ──────────────────────────────────────────────────────────
@@ -341,6 +368,8 @@ export async function handleLiquidityPool({
       }
       allPositions[userKey] = positions;
       saveStoredPositions(allPositions);
+      const addedPosition = positions.find(p => p.poolAddress === pool.poolAddress)!;
+      void syncPositionToAPI(userKey, addedPosition);
 
       return {
         success: true, signature,
@@ -376,11 +405,13 @@ export async function handleLiquidityPool({
       positions[idx].lpBalance -= lpTokenAmount;
       if (positions[idx].lpBalance <= 0) {
         positions.splice(idx, 1);
+        void deletePositionFromAPI(userKey, pool.poolAddress);
       } else {
         positions[idx].sharePercentage = (positions[idx].lpBalance / pool.lpSupply) * 100;
         positions[idx].tokenAValue = Math.max(0, positions[idx].tokenAValue - tokenAReceived);
         positions[idx].tokenBValue = Math.max(0, positions[idx].tokenBValue - tokenBReceived);
         positions[idx].valueUSD = positions[idx].tokenBValue * 2;
+        void syncPositionToAPI(userKey, positions[idx]);
       }
       allPositions[userKey] = positions;
       saveStoredPositions(allPositions);
@@ -511,6 +542,7 @@ export async function claimPoolRewards(
   position.lastClaimedAt = Date.now();
   allPositions[userKey] = positions;
   saveStoredPositions(allPositions);
+  void syncPositionToAPI(userKey, position);
 
   return {
     success: true, signature,
@@ -578,7 +610,20 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<PoolI
 
 export async function getUserLPPositions(walletPubkey: PublicKey): Promise<UserLPPosition[]> {
   const cluster = getCluster();
-  if (cluster === 'devnet') return getUserPositionsFromStorage(walletPubkey.toBase58());
+  if (cluster === 'devnet') {
+    try {
+      const res = await fetch(`/api/liquidity/positions/${encodeURIComponent(walletPubkey.toBase58())}`);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.positions) && json.positions.length > 0) {
+          return json.positions as UserLPPosition[];
+        }
+      }
+    } catch {
+      // network unavailable — fall through to localStorage cache
+    }
+    return getUserPositionsFromStorage(walletPubkey.toBase58());
+  }
   // mainnet: Raydium SDK fetch (omitted)
   return [];
 }

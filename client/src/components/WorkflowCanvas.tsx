@@ -596,10 +596,134 @@ export function WorkflowCanvas() {
         }
       }
 
+      // ── Orca Swap ──────────────────────────────────────────────────────────────
+      const orcaSwapNodes = nodes.filter(n => n.data?.type === 'orcaSwap');
+      for (const oNode of orcaSwapNodes) {
+        const cfg = (oNode.data?.config || {}) as any;
+        const sourceToken = cfg.sourceToken || 'SOL';
+        const targetToken = cfg.targetToken || 'USDC';
+        const uiAmount    = parseFloat(cfg.amount || '1.0');
+        const slippageBps = Math.round(parseFloat(cfg.slippage || '1') * 100);
+        const TOKEN_TO_MINT: Record<string, string> = {
+          SOL:  'So11111111111111111111111111111111111111112',
+          USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+          USDT: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',
+          BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        };
+        const TOKEN_DECIMALS: Record<string, number> = { SOL: 9, USDC: 6, USDT: 6, BONK: 5 };
+        const inputMint    = TOKEN_TO_MINT[sourceToken] || TOKEN_TO_MINT['SOL'];
+        const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
+        toast({ title: 'Executing Orca Swap…', description: `${uiAmount} ${sourceToken} → ${targetToken} via Orca Whirlpools` });
+        try {
+          setNodeExecStatus(oNode.id, 'running');
+          // Try Orca; on devnet fall back to mock swap if no pool exists
+          let result: any;
+          try {
+            const { swapOnOrca } = await import('../lib/solana/orcaWhirlpool');
+            const poolAddress = cfg.poolAddress?.trim();
+            if (!poolAddress) throw new Error('No Orca pool address configured — falling back to mock');
+            result = await swapOnOrca({
+              poolAddress,
+              inputMintAddress: inputMint,
+              inputAmount: uiAmount,
+              inputDecimals,
+              slippageBps,
+              fromPubkey: new PublicKey(userPublicKey),
+              cluster: 'devnet',
+            });
+            result = { signature: result.txId, outputAmount: undefined, mode: 'real', message: result.message };
+          } catch (orcaErr: any) {
+            console.warn('[OrcaSwap] Orca failed, falling back to mock:', orcaErr.message);
+            const { jupiterSwap } = await import('../lib/solana/jupiterSwap');
+            result = await jupiterSwap({ inputMint, outputMint: TOKEN_TO_MINT[targetToken] || TOKEN_TO_MINT['USDC'], uiAmount, inputDecimals, outputDecimals: TOKEN_DECIMALS[targetToken] || 6, slippageBps, userPublicKey, cluster: 'devnet' });
+            result.message = `[Orca fallback] ${result.message}`;
+          }
+          toast({ title: 'Orca Swap Completed ✓', description: result.message });
+          setNodeExecStatus(oNode.id, 'success');
+          executionActions.push({ type: 'orcaSwap' as any, status: 'success', message: result.message, signature: result.signature, details: { sourceToken, targetToken, uiAmount, mode: result.mode } });
+        } catch (err: any) {
+          toast({ title: 'Orca Swap Failed', description: err.message, variant: 'destructive' });
+          executionActions.push({ type: 'orcaSwap' as any, status: 'failed', message: err.message });
+          setNodeExecStatus(oNode.id, 'failed');
+          return;
+        }
+      }
+
+      // ── Raydium Swap ───────────────────────────────────────────────────────────
+      const raydiumSwapNodes = nodes.filter(n => n.data?.type === 'raydiumSwap');
+      for (const rNode of raydiumSwapNodes) {
+        const cfg = (rNode.data?.config || {}) as any;
+        const sourceToken = cfg.sourceToken || 'SOL';
+        const targetToken = cfg.targetToken || 'USDC';
+        const uiAmount    = parseFloat(cfg.amount || '1.0');
+        const slippageBps = Math.round(parseFloat(cfg.slippage || '1') * 100);
+        const TOKEN_TO_MINT: Record<string, string> = {
+          SOL:  'So11111111111111111111111111111111111111112',
+          USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
+          USDT: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',
+          BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+        };
+        const TOKEN_DECIMALS: Record<string, number> = { SOL: 9, USDC: 6, USDT: 6, BONK: 5 };
+        const inputMint     = TOKEN_TO_MINT[sourceToken] || TOKEN_TO_MINT['SOL'];
+        const outputMint    = TOKEN_TO_MINT[targetToken] || TOKEN_TO_MINT['USDC'];
+        const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
+        toast({ title: 'Executing Raydium Swap…', description: `${uiAmount} ${sourceToken} → ${targetToken} via Raydium CPMM` });
+        try {
+          setNodeExecStatus(rNode.id, 'running');
+          let result: any;
+          try {
+            const { getCustomPoolByMints, swapInCpmmPool } = await import('../lib/solana/raydiumDevnet');
+            const pool = getCustomPoolByMints(inputMint, outputMint);
+            if (!pool) throw new Error('No Raydium CPMM pool registered for this pair — falling back to mock');
+            const cpmmResult = await swapInCpmmPool({ poolId: pool.poolId, inputMintAddress: inputMint, inputAmount: uiAmount, inputDecimals, slippageBps, fromPubkey: new PublicKey(userPublicKey) });
+            result = { signature: cpmmResult.txId, mode: 'real', message: cpmmResult.message };
+          } catch (rayErr: any) {
+            console.warn('[RaydiumSwap] Raydium failed, falling back to mock:', rayErr.message);
+            const { jupiterSwap } = await import('../lib/solana/jupiterSwap');
+            result = await jupiterSwap({ inputMint, outputMint, uiAmount, inputDecimals, outputDecimals: TOKEN_DECIMALS[targetToken] || 6, slippageBps, userPublicKey, cluster: 'devnet' });
+            result.message = `[Raydium fallback] ${result.message}`;
+          }
+          toast({ title: 'Raydium Swap Completed ✓', description: result.message });
+          setNodeExecStatus(rNode.id, 'success');
+          executionActions.push({ type: 'raydiumSwap' as any, status: 'success', message: result.message, signature: result.signature, details: { sourceToken, targetToken, uiAmount, mode: result.mode } });
+        } catch (err: any) {
+          toast({ title: 'Raydium Swap Failed', description: err.message, variant: 'destructive' });
+          executionActions.push({ type: 'raydiumSwap' as any, status: 'failed', message: err.message });
+          setNodeExecStatus(rNode.id, 'failed');
+          return;
+        }
+      }
+
+      // ── Token Creation ─────────────────────────────────────────────────────────
+      const tokenCreationNodes = nodes.filter(n => n.data?.type === 'tokenCreation');
+      for (const tNode of tokenCreationNodes) {
+        const cfg           = (tNode.data?.config || {}) as any;
+        const symbol        = cfg.symbol        || 'TKN';
+        const decimals      = parseInt(cfg.decimals || '6');
+        const initialSupply = parseFloat(cfg.initialSupply || '1000000');
+        toast({ title: 'Creating SPL Token…', description: `Minting ${initialSupply} ${symbol} (${decimals} decimals) on devnet` });
+        try {
+          setNodeExecStatus(tNode.id, 'running');
+          const { Connection, clusterApiUrl } = await import('@solana/web3.js');
+          const { createSPLToken } = await import('../lib/solana/splTokenUtils');
+          const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+          const result = await createSPLToken(connection, new PublicKey(userPublicKey), decimals, initialSupply, provider);
+          toast({ title: 'Token Created ✓', description: `Mint: ${result.mintAddress.slice(0, 8)}… | Supply: ${initialSupply} ${symbol}` });
+          setNodeExecStatus(tNode.id, 'success');
+          executionActions.push({ type: 'tokenCreation' as any, status: 'success', message: `Created ${symbol}: ${result.mintAddress}`, signature: result.signature, details: { mintAddress: result.mintAddress, ataAddress: result.ataAddress, decimals, initialSupply } });
+        } catch (err: any) {
+          toast({ title: 'Token Creation Failed', description: err.message, variant: 'destructive' });
+          executionActions.push({ type: 'tokenCreation' as any, status: 'failed', message: err.message });
+          setNodeExecStatus(tNode.id, 'failed');
+          return;
+        }
+      }
+
       // If no executable nodes found
-      const hasExecutableNode = swapNode || liquidityNode || stakeNode || lightningNode || claimNode;
+      const hasExecutableNode = swapNode || liquidityNode || stakeNode || lightningNode || claimNode
+        || orcaSwapNodes.length || raydiumSwapNodes.length || tokenCreationNodes.length;
       if (!hasExecutableNode) {
-        toast({ title: 'No Executable Actions', description: 'Add Swap, Liquidity, Stake, Claim Rewards, or Lightning modules to execute.', variant: 'destructive' });
+        toast({ title: 'No Executable Actions', description: 'Add Swap, Liquidity, Stake, Claim Rewards, Lightning, Orca Swap, Raydium Swap, or Create Token modules to execute.', variant: 'destructive' });
         return;
       }
 
@@ -708,6 +832,9 @@ export function WorkflowCanvas() {
                 case 'claim': return '#7C3AED';
                 case 'bridge': return '#F59E0B';
                 case 'lightning': return '#F59E0B';
+                case 'orcaSwap': return '#06D6A0';
+                case 'raydiumSwap': return '#5F45FF';
+                case 'tokenCreation': return '#F97316';
                 default: return '#888';
               }
             }}
@@ -794,6 +921,9 @@ function getModuleLabel(type: ModuleType): string {
     case 'claim': return 'Claim Rewards';
     case 'bridge': return 'BTC Bridge';
     case 'lightning': return 'Lightning';
+    case 'orcaSwap': return 'Orca Swap';
+    case 'raydiumSwap': return 'Raydium Swap';
+    case 'tokenCreation': return 'Create Token';
     default: return type;
   }
 }

@@ -4,7 +4,7 @@
  */
 
 import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, clusterApiUrl } from '@solana/web3.js';
-import { getDevnetTokenByAddress, getDevnetExchangeRate, isDevnetPairAvailable, getDevnetTokenPrice } from './jupiterDevnetUtils';
+import { getDevnetTokenByAddress, getDevnetExchangeRate, isDevnetPairAvailable, getDevnetExchangeRateLive } from './jupiterDevnetUtils';
 import { validateDevnetTokenPair } from './devnetValidator';
 
 const isBrowser = typeof window !== 'undefined';
@@ -107,7 +107,7 @@ export function getMockSwapQuote(params: MockSwapParams): MockSwapQuote {
  * This simulates a swap by creating a mock transaction
  */
 export async function executeMockSwap(params: MockSwapParams): Promise<MockSwapResult> {
-  const { inputMint, outputMint, uiAmount, inputDecimals, outputDecimals, slippageBps, userPublicKey } = params;
+  const { inputMint, outputMint, uiAmount, slippageBps, userPublicKey } = params;
 
   // Validate token pair
   const validation = validateDevnetTokenPair(inputMint, outputMint);
@@ -123,7 +123,23 @@ export async function executeMockSwap(params: MockSwapParams): Promise<MockSwapR
     throw new Error(`Trading pair not available on devnet: ${inputMint} -> ${outputMint}`);
   }
 
-  // Get quote
+  // Resolve exchange rate: try live Jupiter price feed, fall back to hardcoded mock
+  let exchangeRate: number;
+  let rateSource: 'live' | 'mock';
+  try {
+    const live = await getDevnetExchangeRateLive(inputMint, outputMint);
+    if (live > 0) { exchangeRate = live; rateSource = 'live'; }
+    else { exchangeRate = getDevnetExchangeRate(inputMint, outputMint); rateSource = 'mock'; }
+  } catch {
+    exchangeRate = getDevnetExchangeRate(inputMint, outputMint);
+    rateSource = 'mock';
+  }
+
+  // Compute output using resolved rate (0.3 % fee + slippage)
+  const feeAdjusted = uiAmount * exchangeRate * (1 - 0.003);
+  const liveOutputUi = feeAdjusted * (1 - slippageBps / 10_000);
+
+  // Keep static quote for route / priceImpact display metadata
   const quote = getMockSwapQuote(params);
 
   const inputToken = getDevnetTokenByAddress(inputMint);
@@ -133,8 +149,9 @@ export async function executeMockSwap(params: MockSwapParams): Promise<MockSwapR
     from: inputToken?.symbol,
     to: outputToken?.symbol,
     inputAmount: uiAmount,
-    expectedOutput: Number(quote.outputAmount) / 10 ** outputDecimals,
-    exchangeRate: quote.exchangeRate,
+    expectedOutput: liveOutputUi,
+    exchangeRate,
+    rateSource,
     priceImpact: quote.priceImpact,
   });
 
@@ -203,10 +220,10 @@ export async function executeMockSwap(params: MockSwapParams): Promise<MockSwapR
       throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
 
-    const outputAmountUi = Number(quote.outputAmount) / 10 ** outputDecimals;
+    const outputAmountUi = liveOutputUi;
 
     console.log('[MockJupiter] Mock swap completed!');
-    console.log(`Swapped ${uiAmount} ${inputToken?.symbol} for ~${outputAmountUi.toFixed(4)} ${outputToken?.symbol}`);
+    console.log(`Swapped ${uiAmount} ${inputToken?.symbol} for ~${outputAmountUi.toFixed(4)} ${outputToken?.symbol} (rate source: ${rateSource})`);
 
     return {
       success: true,
@@ -220,8 +237,8 @@ export async function executeMockSwap(params: MockSwapParams): Promise<MockSwapR
     };
   } else {
     // Server-side mock (no wallet needed)
-    const mockSignature = 'mock_swap_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
-    const outputAmountUi = Number(quote.outputAmount) / 10 ** outputDecimals;
+    const mockSignature = 'mock_swap_' + Math.random().toString(36).substring(2, 18) + Date.now().toString(36);
+    const outputAmountUi = liveOutputUi;
 
     // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 1500));

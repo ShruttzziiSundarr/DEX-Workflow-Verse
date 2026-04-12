@@ -250,6 +250,84 @@ export async function assertSufficientBalance(
   }
 }
 
+// ── SPL Token creation ────────────────────────────────────────────────────────
+
+export interface TokenCreationResult {
+  mintAddress: string;
+  ataAddress: string;
+  signature: string;
+  decimals: number;
+  initialSupply: number;
+}
+
+/**
+ * Create a brand-new SPL token mint on devnet.
+ * Builds a single transaction that:
+ *   1. Creates the mint account (funded by the owner)
+ *   2. Initialises the mint (decimals + authorities)
+ *   3. Creates the owner's Associated Token Account
+ *   4. Mints `initialSupply` tokens to that ATA (if > 0)
+ *
+ * The mint keypair is pre-signed before Phantom is asked to sign,
+ * so the user only sees one approval dialog.
+ */
+export async function createSPLToken(
+  connection: Connection,
+  ownerPubkey: PublicKey,
+  decimals: number,
+  initialSupply: number,
+  phantomProvider: any,
+): Promise<TokenCreationResult> {
+  const lib = await spl();
+  const { Keypair, SystemProgram } = await import('@solana/web3.js');
+
+  const mintKeypair = Keypair.generate();
+  const mintPubkey  = mintKeypair.publicKey;
+
+  const mintRent = await connection.getMinimumBalanceForRentExemption(lib.MINT_SIZE);
+
+  const ata: PublicKey = typeof lib.getAssociatedTokenAddressSync === 'function'
+    ? lib.getAssociatedTokenAddressSync(mintPubkey, ownerPubkey, false, lib.TOKEN_PROGRAM_ID, lib.ASSOCIATED_TOKEN_PROGRAM_ID)
+    : await lib.getAssociatedTokenAddress(mintPubkey, ownerPubkey);
+
+  const tx = new Transaction();
+
+  tx.add(
+    SystemProgram.createAccount({
+      fromPubkey:         ownerPubkey,
+      newAccountPubkey:   mintPubkey,
+      space:              lib.MINT_SIZE,
+      lamports:           mintRent,
+      programId:          lib.TOKEN_PROGRAM_ID,
+    }),
+    lib.createInitializeMintInstruction(mintPubkey, decimals, ownerPubkey, ownerPubkey),
+    lib.createAssociatedTokenAccountInstruction(ownerPubkey, ata, ownerPubkey, mintPubkey),
+  );
+
+  if (initialSupply > 0) {
+    const rawSupply = Math.floor(initialSupply * Math.pow(10, decimals));
+    tx.add(lib.createMintToInstruction(mintPubkey, ata, ownerPubkey, rawSupply));
+  }
+
+  const { blockhash } = await connection.getLatestBlockhash();
+  tx.recentBlockhash = blockhash;
+  tx.feePayer        = ownerPubkey;
+
+  // Pre-sign with the new mint keypair, then ask Phantom for the owner sig
+  tx.partialSign(mintKeypair);
+  const signedTx  = await phantomProvider.signTransaction(tx);
+  const signature = await connection.sendRawTransaction(signedTx.serialize());
+  await connection.confirmTransaction(signature, 'confirmed');
+
+  return {
+    mintAddress:   mintPubkey.toBase58(),
+    ataAddress:    ata.toBase58(),
+    signature,
+    decimals,
+    initialSupply,
+  };
+}
+
 // ── Devnet test-token minting ─────────────────────────────────────────────────
 
 /**

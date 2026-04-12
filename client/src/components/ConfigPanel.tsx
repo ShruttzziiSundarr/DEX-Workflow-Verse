@@ -72,6 +72,28 @@ type LiquidityPoolConfig = CommonConfig & {
   slippage: string;
 };
 
+type OrcaSwapConfig = CommonConfig & {
+  sourceToken: string;
+  targetToken: string;
+  amount: string;
+  slippage: string;
+  poolAddress: string;
+};
+
+type RaydiumSwapConfig = CommonConfig & {
+  sourceToken: string;
+  targetToken: string;
+  amount: string;
+  slippage: string;
+  poolId: string;
+};
+
+type TokenCreationConfig = CommonConfig & {
+  symbol: string;
+  decimals: string;
+  initialSupply: string;
+};
+
 export function ConfigPanel() {
   const selectedNode = (window as any).selectedWorkflowNode;
   const { updateNodeData } = useWorkflow();
@@ -130,6 +152,31 @@ export function ConfigPanel() {
     slippage: "1",
   });
 
+  const [orcaSwapConfig, setOrcaSwapConfig] = useState<OrcaSwapConfig>({
+    moduleName: "Orca Swap",
+    sourceToken: "SOL",
+    targetToken: "USDC",
+    amount: "1.0",
+    slippage: "1",
+    poolAddress: "",
+  });
+
+  const [raydiumSwapConfig, setRaydiumSwapConfig] = useState<RaydiumSwapConfig>({
+    moduleName: "Raydium Swap",
+    sourceToken: "SOL",
+    targetToken: "USDC",
+    amount: "1.0",
+    slippage: "1",
+    poolId: "",
+  });
+
+  const [tokenCreationConfig, setTokenCreationConfig] = useState<TokenCreationConfig>({
+    moduleName: "Create Token",
+    symbol: "TKN",
+    decimals: "6",
+    initialSupply: "1000000",
+  });
+
   // Update form based on selected node
   useEffect(() => {
     if (selectedNode) {
@@ -180,6 +227,27 @@ export function ConfigPanel() {
           setLpConfig(prev => ({
             ...prev,
             moduleName: currentData.label || "Add Liquidity",
+            ...currentData.config
+          }));
+          break;
+        case "orcaSwap":
+          setOrcaSwapConfig(prev => ({
+            ...prev,
+            moduleName: currentData.label || "Orca Swap",
+            ...currentData.config
+          }));
+          break;
+        case "raydiumSwap":
+          setRaydiumSwapConfig(prev => ({
+            ...prev,
+            moduleName: currentData.label || "Raydium Swap",
+            ...currentData.config
+          }));
+          break;
+        case "tokenCreation":
+          setTokenCreationConfig(prev => ({
+            ...prev,
+            moduleName: currentData.label || "Create Token",
             ...currentData.config
           }));
           break;
@@ -237,6 +305,15 @@ export function ConfigPanel() {
           label: lpConfig.moduleName,
           config: { ...lpConfig }
         };
+        break;
+      case "orcaSwap":
+        newData = { ...newData, label: orcaSwapConfig.moduleName, config: { ...orcaSwapConfig } };
+        break;
+      case "raydiumSwap":
+        newData = { ...newData, label: raydiumSwapConfig.moduleName, config: { ...raydiumSwapConfig } };
+        break;
+      case "tokenCreation":
+        newData = { ...newData, label: tokenCreationConfig.moduleName, config: { ...tokenCreationConfig } };
         break;
     }
 
@@ -311,6 +388,15 @@ export function ConfigPanel() {
           lpTokenAmount: "0",
           slippage: "1",
         });
+        break;
+      case "orcaSwap":
+        setOrcaSwapConfig({ moduleName: "Orca Swap", sourceToken: "SOL", targetToken: "USDC", amount: "1.0", slippage: "1", poolAddress: "" });
+        break;
+      case "raydiumSwap":
+        setRaydiumSwapConfig({ moduleName: "Raydium Swap", sourceToken: "SOL", targetToken: "USDC", amount: "1.0", slippage: "1", poolId: "" });
+        break;
+      case "tokenCreation":
+        setTokenCreationConfig({ moduleName: "Create Token", symbol: "TKN", decimals: "6", initialSupply: "1000000" });
         break;
     }
   };
@@ -1047,6 +1133,159 @@ export function ConfigPanel() {
                 </Card>
               );
             })()}
+          </div>
+        </div>
+      );
+      break;
+
+    case "orcaSwap":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(6,214,160,0.2)" }}>
+              <span className="material-icons" style={{ color: "#06D6A0" }}>waves</span>
+            </div>
+            <h3 className="text-base font-medium">Orca Swap Configuration</h3>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input value={orcaSwapConfig.moduleName} onChange={(e) => setOrcaSwapConfig({...orcaSwapConfig, moduleName: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Source Token</Label>
+              <Select value={orcaSwapConfig.sourceToken} onValueChange={(v) => setOrcaSwapConfig({...orcaSwapConfig, sourceToken: v})}>
+                <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SOL">SOL</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                  <SelectItem value="BONK">BONK</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Target Token</Label>
+              <Select value={orcaSwapConfig.targetToken} onValueChange={(v) => setOrcaSwapConfig({...orcaSwapConfig, targetToken: v})}>
+                <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                  <SelectItem value="SOL">SOL</SelectItem>
+                  <SelectItem value="BONK">BONK</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Amount</Label>
+              <Input type="text" value={orcaSwapConfig.amount} onChange={(e) => setOrcaSwapConfig({...orcaSwapConfig, amount: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Slippage (%)</Label>
+              <Input type="text" value={orcaSwapConfig.slippage} onChange={(e) => setOrcaSwapConfig({...orcaSwapConfig, slippage: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Whirlpool Address (optional)</Label>
+              <Input placeholder="Leave blank to auto-detect or use mock fallback" value={orcaSwapConfig.poolAddress} onChange={(e) => setOrcaSwapConfig({...orcaSwapConfig, poolAddress: e.target.value})} className="mt-1 bg-background border-border text-xs" />
+            </div>
+          </div>
+        </div>
+      );
+      break;
+
+    case "raydiumSwap":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(95,69,255,0.2)" }}>
+              <span className="material-icons" style={{ color: "#5F45FF" }}>hub</span>
+            </div>
+            <h3 className="text-base font-medium">Raydium Swap Configuration</h3>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input value={raydiumSwapConfig.moduleName} onChange={(e) => setRaydiumSwapConfig({...raydiumSwapConfig, moduleName: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Source Token</Label>
+              <Select value={raydiumSwapConfig.sourceToken} onValueChange={(v) => setRaydiumSwapConfig({...raydiumSwapConfig, sourceToken: v})}>
+                <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SOL">SOL</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                  <SelectItem value="BONK">BONK</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Target Token</Label>
+              <Select value={raydiumSwapConfig.targetToken} onValueChange={(v) => setRaydiumSwapConfig({...raydiumSwapConfig, targetToken: v})}>
+                <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                  <SelectItem value="SOL">SOL</SelectItem>
+                  <SelectItem value="BONK">BONK</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Amount</Label>
+              <Input type="text" value={raydiumSwapConfig.amount} onChange={(e) => setRaydiumSwapConfig({...raydiumSwapConfig, amount: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Slippage (%)</Label>
+              <Input type="text" value={raydiumSwapConfig.slippage} onChange={(e) => setRaydiumSwapConfig({...raydiumSwapConfig, slippage: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Pool ID (optional)</Label>
+              <Input placeholder="Leave blank to use registered CPMM pool" value={raydiumSwapConfig.poolId} onChange={(e) => setRaydiumSwapConfig({...raydiumSwapConfig, poolId: e.target.value})} className="mt-1 bg-background border-border text-xs" />
+            </div>
+          </div>
+        </div>
+      );
+      break;
+
+    case "tokenCreation":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(249,115,22,0.2)" }}>
+              <span className="material-icons" style={{ color: "#F97316" }}>toll</span>
+            </div>
+            <h3 className="text-base font-medium">Create Token Configuration</h3>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input value={tokenCreationConfig.moduleName} onChange={(e) => setTokenCreationConfig({...tokenCreationConfig, moduleName: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Token Symbol</Label>
+              <Input placeholder="e.g. TKN" value={tokenCreationConfig.symbol} onChange={(e) => setTokenCreationConfig({...tokenCreationConfig, symbol: e.target.value.toUpperCase().slice(0, 10)})} className="mt-1 bg-background border-border font-mono" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Decimals</Label>
+              <Select value={tokenCreationConfig.decimals} onValueChange={(v) => setTokenCreationConfig({...tokenCreationConfig, decimals: v})}>
+                <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">0 (whole units)</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                  <SelectItem value="6">6 (like USDC)</SelectItem>
+                  <SelectItem value="9">9 (like SOL)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Initial Supply</Label>
+              <Input type="text" placeholder="1000000" value={tokenCreationConfig.initialSupply} onChange={(e) => setTokenCreationConfig({...tokenCreationConfig, initialSupply: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div className="rounded-md bg-orange-500/10 border border-orange-500/30 p-3 text-xs text-orange-300">
+              <span className="material-icons text-xs mr-1 align-middle">info</span>
+              Creates a real SPL token on <strong>devnet</strong>. You will be the mint authority. Save the mint address from the execution log.
+            </div>
           </div>
         </div>
       );

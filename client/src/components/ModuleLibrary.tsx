@@ -104,12 +104,49 @@ const MODULES: ModuleInfo[] = [
     example: "Send 0.1 SOL instantly to any wallet address via Solana System Program with an optional memo.",
     useCase: "Fast SOL payments between wallets, funding sub-wallets, or routing funds as a workflow step.",
   },
+  {
+    type: "orcaSwap",
+    title: "Orca Swap",
+    description: "Swap via Orca Whirlpools CLMM",
+    icon: "waves",
+    color: "#06D6A0",
+    bgColor: "rgba(6, 214, 160, 0.2)",
+    status: "full",
+    example: "Swap SOL → USDC through Orca Whirlpools concentrated liquidity market maker on devnet.",
+    useCase: "Accessing Orca's CLMM pools for tighter spreads on stable pairs; falls back to mock swap on devnet if no pool exists.",
+  },
+  {
+    type: "raydiumSwap",
+    title: "Raydium Swap",
+    description: "Swap via Raydium CPMM pool",
+    icon: "hub",
+    color:("#5F45FF"),
+    bgColor: "rgba(95, 69, 255, 0.2)",
+    status: "full",
+    example: "Swap tokens through a Raydium CPMM pool — uses any custom pool you created via Create Pool.",
+    useCase: "Routing swaps through your own Raydium CPMM pool on devnet; automatically falls back to mock if no pool is registered.",
+  },
+  {
+    type: "tokenCreation",
+    title: "Create Token",
+    description: "Mint a new SPL token",
+    icon: "toll",
+    color: "#F97316",
+    bgColor: "rgba(249, 115, 22, 0.2)",
+    status: "full",
+    example: "Create a new SPL token with 6 decimals and mint 1,000,000 initial supply to your wallet on devnet.",
+    useCase: "Bootstrapping a new token for testing a DEX pool, reward program, or governance experiment.",
+  },
 ];
 
 const CATEGORIES = [
   {
     name: "Core Operations",
     modules: ["swap", "liquidityPool", "addLiquidity", "removeLiquidity", "stake", "claim"],
+  },
+  {
+    name: "Solana DeFi",
+    modules: ["orcaSwap", "raydiumSwap", "tokenCreation"],
   },
   {
     name: "Bitcoin Operations",
