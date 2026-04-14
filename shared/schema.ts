@@ -107,17 +107,21 @@ export type LpPosition = typeof lpPositions.$inferSelect;
 
 // Module types for workflow
 export const ModuleTypeEnum = z.enum([
+  // ── Unified types (new sidebar modules) ──
   "swap",
+  "liquidity",
+  "stake",
+  "claim",
+  "transfer",
+  "bridge",
+  "tokenCreation",
+  // ── Legacy types (kept for saved workflow backward compatibility) ──
   "liquidityPool",
   "addLiquidity",
   "removeLiquidity",
-  "stake",
-  "claim",
-  "bridge",
-  "lightning",
   "orcaSwap",
   "raydiumSwap",
-  "tokenCreation",
+  "lightning",
 ]);
 
 export type ModuleType = z.infer<typeof ModuleTypeEnum>;
