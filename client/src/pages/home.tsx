@@ -147,6 +147,14 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<number | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualSelectedType, setManualSelectedType] = useState<string | undefined>();
+  const [showBanner, setShowBanner] = useState(() => {
+    return localStorage.getItem('hideHelpBanner') !== 'true';
+  });
+
+  const dismissBanner = () => {
+    setShowBanner(false);
+    localStorage.setItem('hideHelpBanner', 'true');
+  };
 
   // Listen for open-operation-manual events from TimeComparisonPanel & other components
   useEffect(() => {
@@ -311,6 +319,24 @@ export default function Home() {
 
           <WalletConnector />
         </header>
+
+        {showBanner && (
+          <div className="bg-primary/10 border-y border-primary/20 px-4 py-2 flex items-center justify-between shrink-0">
+            <p className="text-sm text-foreground/90 font-medium">
+              <span className="mr-2 hidden sm:inline">📖</span>
+              New here? Read the Operation Manual before building workflows.
+              <button 
+                onClick={() => setManualOpen(true)}
+                className="ml-2 font-bold text-primary hover:opacity-80 underline underline-offset-2"
+              >
+                Open Manual →
+              </button>
+            </p>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-primary/20 text-foreground/70" onClick={dismissBanner}>
+              <span className="material-icons text-[16px]">close</span>
+            </Button>
+          </div>
+        )}
         
         <div className="flex flex-1 overflow-hidden">
           {/* Desktop Layout */}

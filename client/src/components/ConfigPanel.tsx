@@ -25,14 +25,18 @@ type CommonConfig = {
 };
 
 type SwapConfig = CommonConfig & {
+  protocol: 'jupiter' | 'raydium' | 'orca';
   sourceToken: string;
   targetToken: string;
   amount: string;
   slippage: string;
-  useBestRoute: boolean;
+  useBestRoute?: boolean;
+  poolId?: string;
+  poolAddress?: string;
 };
 
 type StakeConfig = CommonConfig & {
+  protocol: 'native' | 'marinade';
   asset: string;
   pool: string;
   lockPeriod: string;
@@ -56,6 +60,13 @@ type BridgeConfig = CommonConfig & {
   amount: string;
 };
 
+type TransferConfig = CommonConfig & {
+  recipient: string;
+  amount: string;
+  token: string;
+  memo: string;
+};
+
 type LightningConfig = CommonConfig & {
   recipient: string;
   amount: string;
@@ -63,13 +74,16 @@ type LightningConfig = CommonConfig & {
 };
 
 type LiquidityPoolConfig = CommonConfig & {
-  action: 'addLiquidity' | 'removeLiquidity';
+  protocol: 'raydium' | 'orca';
+  action: 'addLiquidity' | 'removeLiquidity' | 'createPool';
   tokenA: string;
   tokenB: string;
   amountA: string;
   amountB: string;
   lpTokenAmount: string;
   slippage: string;
+  poolId?: string;
+  poolAddress?: string;
 };
 
 type OrcaSwapConfig = CommonConfig & {
@@ -102,7 +116,8 @@ export function ConfigPanel() {
   
   // State for different module configurations
   const [swapConfig, setSwapConfig] = useState<SwapConfig>({
-    moduleName: "Swap SOL to USDC",
+    moduleName: "Swap Tokens",
+    protocol: "jupiter",
     sourceToken: "SOL",
     targetToken: "USDC",
     amount: "1.0",
@@ -112,6 +127,7 @@ export function ConfigPanel() {
   
   const [stakeConfig, setStakeConfig] = useState<StakeConfig>({
     moduleName: "Stake SOL",
+    protocol: "native",
     asset: "SOL",
     pool: "Native Staking",
     lockPeriod: "30",
@@ -141,8 +157,17 @@ export function ConfigPanel() {
     memo: "Payment for services",
   });
 
+  const [transferConfig, setTransferConfig] = useState<TransferConfig>({
+    moduleName: "Transfer",
+    recipient: "",
+    amount: "0.1",
+    token: "SOL",
+    memo: "",
+  });
+
   const [lpConfig, setLpConfig] = useState<LiquidityPoolConfig>({
-    moduleName: "Add Liquidity",
+    moduleName: "Liquidity Pool",
+    protocol: "raydium",
     action: "addLiquidity",
     tokenA: "SOL",
     tokenB: "USDC",
@@ -214,6 +239,13 @@ export function ConfigPanel() {
             ...currentData.config
           }));
           break;
+        case "transfer":
+          setTransferConfig(prev => ({
+            ...prev,
+            moduleName: currentData.label || "Transfer",
+            ...currentData.config
+          }));
+          break;
         case "lightning":
           setLightningConfig(prev => ({
             ...prev,
@@ -221,12 +253,13 @@ export function ConfigPanel() {
             ...currentData.config
           }));
           break;
+        case "liquidity":
         case "liquidityPool":
         case "addLiquidity":
         case "removeLiquidity":
           setLpConfig(prev => ({
             ...prev,
-            moduleName: currentData.label || "Add Liquidity",
+            moduleName: currentData.label || "Liquidity Pool",
             ...currentData.config
           }));
           break;
@@ -290,6 +323,13 @@ export function ConfigPanel() {
           config: { ...bridgeConfig }
         };
         break;
+      case "transfer":
+        newData = {
+          ...newData,
+          label: transferConfig.moduleName,
+          config: { ...transferConfig }
+        };
+        break;
       case "lightning":
         newData = {
           ...newData,
@@ -297,6 +337,7 @@ export function ConfigPanel() {
           config: { ...lightningConfig }
         };
         break;
+      case "liquidity":
       case "liquidityPool":
       case "addLiquidity":
       case "removeLiquidity":
@@ -367,6 +408,15 @@ export function ConfigPanel() {
           amount: "0.1",
         });
         break;
+      case "transfer":
+        setTransferConfig({
+          moduleName: "Transfer",
+          recipient: "",
+          amount: "0.1",
+          token: "SOL",
+          memo: "",
+        });
+        break;
       case "lightning":
         setLightningConfig({
           moduleName: "Lightning Payment",
@@ -375,11 +425,13 @@ export function ConfigPanel() {
           memo: "Payment for services",
         });
         break;
+      case "liquidity":
       case "liquidityPool":
       case "addLiquidity":
       case "removeLiquidity":
         setLpConfig({
-          moduleName: "Add Liquidity",
+          moduleName: "Liquidity Pool",
+          protocol: "raydium",
           action: "addLiquidity",
           tokenA: "SOL",
           tokenB: "USDC",
@@ -461,6 +513,23 @@ export function ConfigPanel() {
                 onChange={(e) => setSwapConfig({...swapConfig, moduleName: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
+            </div>
+            
+            <div>
+              <Label className="text-xs text-muted-foreground">Protocol</Label>
+              <Select
+                value={swapConfig.protocol}
+                onValueChange={(value: 'jupiter' | 'raydium' | 'orca') => setSwapConfig({...swapConfig, protocol: value})}
+              >
+                <SelectTrigger className="mt-1 bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="jupiter">Jupiter (Best Route)</SelectItem>
+                  <SelectItem value="raydium">Raydium CPMM</SelectItem>
+                  <SelectItem value="orca">Orca Whirlpools</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
@@ -611,6 +680,22 @@ export function ConfigPanel() {
                 onChange={(e) => setStakeConfig({...stakeConfig, moduleName: e.target.value})}
                 className="mt-1 bg-background border-border"
               />
+            </div>
+            
+            <div>
+              <Label className="text-xs text-muted-foreground">Protocol</Label>
+              <Select 
+                value={stakeConfig.protocol}
+                onValueChange={(value: 'native' | 'marinade') => setStakeConfig({...stakeConfig, protocol: value})}
+              >
+                <SelectTrigger className="mt-1 bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="native">Native Staking</SelectItem>
+                  <SelectItem value="marinade">Marinade (Liquid Staking)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             
             <div>
@@ -925,6 +1010,7 @@ export function ConfigPanel() {
       );
       break;
 
+    case "liquidity":
     case "liquidityPool":
     case "addLiquidity":
     case "removeLiquidity":
@@ -948,10 +1034,26 @@ export function ConfigPanel() {
             </div>
 
             <div>
+              <Label className="text-xs text-muted-foreground">Protocol</Label>
+              <Select
+                value={lpConfig.protocol}
+                onValueChange={(value: 'raydium' | 'orca') => setLpConfig({...lpConfig, protocol: value})}
+              >
+                <SelectTrigger className="mt-1 bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="raydium">Raydium Pools (CPMM)</SelectItem>
+                  <SelectItem value="orca">Orca Whirlpools (CLMM)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
               <Label className="text-xs text-muted-foreground">Action</Label>
               <Select
                 value={lpConfig.action}
-                onValueChange={(value: 'addLiquidity' | 'removeLiquidity') => setLpConfig({...lpConfig, action: value})}
+                onValueChange={(value: 'addLiquidity' | 'removeLiquidity' | 'createPool') => setLpConfig({...lpConfig, action: value})}
               >
                 <SelectTrigger className="mt-1 bg-background border-border">
                   <SelectValue />
@@ -959,6 +1061,7 @@ export function ConfigPanel() {
                 <SelectContent>
                   <SelectItem value="addLiquidity">Add Liquidity</SelectItem>
                   <SelectItem value="removeLiquidity">Remove Liquidity</SelectItem>
+                  <SelectItem value="createPool">Create New Pool</SelectItem>
                 </SelectContent>
               </Select>
             </div>
