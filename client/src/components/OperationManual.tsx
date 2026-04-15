@@ -551,7 +551,8 @@ const OPERATIONS: OperationDoc[] = [
     workflowVerseSteps: [
       'Drag "BTC Bridge" onto canvas',
       'Enter amount and destination',
-      'Execute — mock simulation shows the full flow',
+      'Execute — monitor phase status: awaiting_deposit -> confirming -> minting -> minted',
+      'Use Retry/Cancel controls and Bridge Request logs to track heartbeat updates',
     ],
     example: {
       scenario: 'Bridge 0.01 BTC → sBTC on Solana (simulated).',
@@ -561,6 +562,7 @@ const OPERATIONS: OperationDoc[] = [
       '⚠️ Bridges carry smart contract risk',
       'Cross-chain finality is the bottleneck — no speedup possible',
       'On Devnet, this is simulated',
+      'The Bridge panel is resumable: request ID and status logs persist across refreshes',
     ],
     timeTraditional: '45–90 min',
     timeWorkflowVerse: '~45 min',

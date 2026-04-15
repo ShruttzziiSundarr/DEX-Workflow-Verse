@@ -57,6 +57,8 @@ const TOKEN_DECIMALS: Record<string, number> = {
   RAY: 6,
   ORCA: 6,
 };
+const ORCA_DEVNET_SOL_DEVUSDC_POOL = '3KBZiL2g8C7tiJ32hTv5v3KM7aK9htpqTw4cTXz1HvPt';
+const ORCA_DEVNET_USDC_MINT = 'BRjpCHtyQLNCo8gqRUr8jtdAj5AjPYQaoqbvcZiHok1k';
 
 const AUTO_EARN_ALLOCATIONS: Record<'conservative' | 'balanced' | 'aggressive', { swapPct: number; stakePct: number }> = {
   conservative: { swapPct: 0.45, stakePct: 0.30 },
@@ -334,32 +336,54 @@ export function WorkflowCanvas() {
           // Step 1: Swap portion to USDC (real-first on devnet; fallback to mock only if no route)
           let swapResult: any;
           try {
-            swapResult = await jupiterSwap({
-              inputMint: DEVNET_TOKEN_MINTS.SOL,
-              outputMint: DEVNET_TOKEN_MINTS.USDC,
-              uiAmount: swapAmount,
+            const { routedSwap } = await import('../lib/solana/dexRouter');
+            const routed = await routedSwap({
+              inputMintAddress: DEVNET_TOKEN_MINTS.SOL,
+              outputMintAddress: ORCA_DEVNET_USDC_MINT,
+              inputAmount: swapAmount,
               inputDecimals: TOKEN_DECIMALS.SOL,
               outputDecimals: TOKEN_DECIMALS.USDC,
               slippageBps: 100,
-              userPublicKey,
-              destinationWallet: userPublicKey,
+              walletAddress: userPublicKey,
               cluster: 'devnet',
+              protocol: 'orca',
+              orcaPoolAddress: ORCA_DEVNET_SOL_DEVUSDC_POOL,
             });
+            swapResult = {
+              signature: routed.txId,
+              mode: routed.mode,
+              message: routed.message,
+              outputAmount: undefined,
+            };
           } catch (swapErr: any) {
-            console.warn('[Auto-Earn] Real devnet swap route unavailable, using mock fallback:', swapErr?.message);
-            swapResult = await jupiterSwap({
-              inputMint: DEVNET_TOKEN_MINTS.SOL,
-              outputMint: DEVNET_TOKEN_MINTS.USDC,
-              uiAmount: swapAmount,
-              inputDecimals: TOKEN_DECIMALS.SOL,
-              outputDecimals: TOKEN_DECIMALS.USDC,
-              slippageBps: 100,
-              userPublicKey,
-              destinationWallet: userPublicKey,
-              cluster: 'devnet',
-              forceMock: true,
-            });
-            swapResult.message = `[Auto-Earn fallback] ${swapResult.message}`;
+            console.warn('[Auto-Earn] Orca route unavailable, trying Raydium/Jupiter devnet path:', swapErr?.message);
+            try {
+              swapResult = await jupiterSwap({
+                inputMint: DEVNET_TOKEN_MINTS.SOL,
+                outputMint: DEVNET_TOKEN_MINTS.USDC,
+                uiAmount: swapAmount,
+                inputDecimals: TOKEN_DECIMALS.SOL,
+                outputDecimals: TOKEN_DECIMALS.USDC,
+                slippageBps: 100,
+                userPublicKey,
+                destinationWallet: userPublicKey,
+                cluster: 'devnet',
+              });
+            } catch {
+              swapResult = await jupiterSwap({
+                inputMint: DEVNET_TOKEN_MINTS.SOL,
+                outputMint: DEVNET_TOKEN_MINTS.USDC,
+                uiAmount: swapAmount,
+                inputDecimals: TOKEN_DECIMALS.SOL,
+                outputDecimals: TOKEN_DECIMALS.USDC,
+                slippageBps: 100,
+                userPublicKey,
+                destinationWallet: userPublicKey,
+                cluster: 'devnet',
+                forceMock: true,
+              });
+              swapResult.message = `[Auto-Earn fallback] ${swapResult.message}`;
+            }
           }
 
           executionActions.push({
@@ -373,24 +397,57 @@ export function WorkflowCanvas() {
           // Step 2: Add liquidity on Raydium-style LP path
           const { handleLiquidityPool } = await import('../lib/solana/liquidityPool');
           const usdcForLp = Number(((swapResult.outputAmount as number) || (swapAmount * 150)).toFixed(6));
-          const lpResult = await handleLiquidityPool({
-            action: 'addLiquidity',
-            tokenA: 'SOL',
-            tokenB: 'USDC',
-            amountA: lpAssetAmount,
-            amountB: usdcForLp,
-            slippage: 1,
-            poolAddress: '',
-            fromPubkey: new PublicKey(userPublicKey),
-          });
+          try {
+            const lpResult = await handleLiquidityPool({
+              action: 'addLiquidity',
+              tokenA: 'SOL',
+              tokenB: 'USDC',
+              amountA: lpAssetAmount,
+              amountB: usdcForLp,
+              slippage: 1,
+              poolAddress: '',
+              fromPubkey: new PublicKey(userPublicKey),
+            });
 
-          executionActions.push({
-            type: 'addLiquidity',
-            status: 'success',
-            message: `[Auto-Earn] Added liquidity with ${lpAssetAmount} SOL + ${usdcForLp} USDC`,
-            signature: lpResult.signature,
-            details: { module: 'autoEarn', step: 'addLiquidity', mode: lpResult.mode, poolAddress: lpResult.poolAddress, lpTokensReceived: lpResult.lpTokensReceived },
-          });
+            executionActions.push({
+              type: 'addLiquidity',
+              status: 'success',
+              message: `[Auto-Earn] Added liquidity with ${lpAssetAmount} SOL + ${usdcForLp} USDC`,
+              signature: lpResult.signature,
+              details: { module: 'autoEarn', step: 'addLiquidity', mode: lpResult.mode, poolAddress: lpResult.poolAddress, lpTokensReceived: lpResult.lpTokensReceived },
+            });
+          } catch (lpErr: any) {
+            const msg = lpErr?.message || '';
+            if (msg.includes('No on-chain pool found')) {
+              // Graceful fallback for devnet demos where a custom CPMM pool was not pre-created.
+              const { Connection, SystemProgram, Transaction, clusterApiUrl } = await import('@solana/web3.js');
+              const connection = new Connection(clusterApiUrl('devnet'), 'confirmed');
+              const fromPubkey = new PublicKey(userPublicKey);
+              const latestBlockhash = await connection.getLatestBlockhash();
+              const tx = new Transaction().add(
+                SystemProgram.transfer({ fromPubkey, toPubkey: fromPubkey, lamports: 1 })
+              );
+              tx.recentBlockhash = latestBlockhash.blockhash;
+              tx.feePayer = fromPubkey;
+              const signed = await provider.signTransaction(tx);
+              const fallbackSig = await connection.sendRawTransaction(signed.serialize());
+              await connection.confirmTransaction({
+                signature: fallbackSig,
+                blockhash: latestBlockhash.blockhash,
+                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+              }, 'confirmed');
+
+              executionActions.push({
+                type: 'addLiquidity',
+                status: 'success',
+                message: '[Auto-Earn fallback] LP step simulated because no custom devnet CPMM pool was found',
+                signature: fallbackSig,
+                details: { module: 'autoEarn', step: 'addLiquidity', mode: 'mock', note: 'Create a devnet CPMM pool to make this step fully real' },
+              });
+            } else {
+              throw lpErr;
+            }
+          }
 
           // Step 3: Stake remaining SOL
           const { handleMarinadeStake } = await import('../lib/solana/marinadeStaking');
@@ -795,6 +852,75 @@ export function WorkflowCanvas() {
         }
       }
 
+      // ── BTC Bridge (long-running status flow) ─────────────────────────────────
+      const bridgeNodes = nodes.filter(n => n.data?.type === 'bridge');
+      for (const bNode of bridgeNodes) {
+        const cfg = (bNode.data?.config || {}) as any;
+        const sourceChain = cfg.sourceChain || 'Bitcoin Testnet';
+        const targetChain = cfg.targetChain || 'Solana Devnet';
+        const amount = cfg.amount || '0.1';
+        try {
+          setNodeExecStatus(bNode.id, 'running');
+          toast({
+            title: 'Bridge Request Started',
+            description: `Tracking ${amount} BTC ${sourceChain} -> ${targetChain} confirmation flow`,
+          });
+
+          const {
+            createBridgeJob,
+            runBridgeJob,
+          } = await import('../lib/bridge/bridgeWorkflow');
+
+          const job = createBridgeJob({
+            nodeId: bNode.id,
+            sourceChain,
+            targetChain,
+            amount,
+            destinationWallet: userPublicKey,
+            requiredConfirmations: 1,
+          });
+
+          const finalJob = await runBridgeJob(job.id);
+          if (finalJob.status === 'minted') {
+            setNodeExecStatus(bNode.id, 'success');
+            executionActions.push({
+              type: 'bridge',
+              status: 'success',
+              message: `Bridge completed: ${amount} BTC -> wrapped asset minted on Solana`,
+              signature: finalJob.solanaTxId,
+              details: {
+                bridgeRequestId: finalJob.id,
+                sourceChain: finalJob.sourceChain,
+                targetChain: finalJob.targetChain,
+                btcTxId: finalJob.btcTxId,
+                confirmations: `${finalJob.currentConfirmations}/${finalJob.requiredConfirmations}`,
+                status: finalJob.status,
+              },
+            });
+            toast({
+              title: 'Bridge Completed ✓',
+              description: `Mint tx: ${finalJob.solanaTxId?.slice(0, 10)}...`,
+            });
+          } else {
+            throw new Error(finalJob.failureReason || `Bridge did not complete. Current status: ${finalJob.status}`);
+          }
+        } catch (bridgeErr: any) {
+          console.error('Bridge flow error:', bridgeErr);
+          setNodeExecStatus(bNode.id, 'failed');
+          executionActions.push({
+            type: 'bridge',
+            status: 'failed',
+            message: bridgeErr.message || 'Bridge flow failed',
+          });
+          toast({
+            title: 'Bridge Flow Failed',
+            description: bridgeErr.message || 'Unknown bridge error',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+
       // ── Orca Swap ──────────────────────────────────────────────────────────────
       const orcaSwapNodes = nodes.filter(n => n.data?.type === 'orcaSwap');
       for (const oNode of orcaSwapNodes) {
@@ -910,7 +1036,7 @@ export function WorkflowCanvas() {
       }
 
       // If no executable nodes found
-      const hasExecutableNode = autoEarnNodes.length || swapNode || liquidityNode || stakeNode || lightningNode || claimNode
+      const hasExecutableNode = autoEarnNodes.length || swapNode || liquidityNode || stakeNode || lightningNode || claimNode || bridgeNodes.length
         || orcaSwapNodes.length || raydiumSwapNodes.length || tokenCreationNodes.length;
       if (!hasExecutableNode) {
         toast({ title: 'No Executable Actions', description: 'Add Auto-Earn, Swap, Liquidity, Stake, Claim Rewards, Lightning, Orca Swap, Raydium Swap, or Create Token modules to execute.', variant: 'destructive' });

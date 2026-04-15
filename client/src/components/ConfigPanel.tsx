@@ -10,6 +10,7 @@ import { useWorkflow } from "@/hooks/use-workflow";
 import { useToast } from "@/hooks/use-toast";
 import { ModuleType } from "@shared/schema";
 import { estimateLPTokens, getUserPositionsFromStorage } from "@/lib/solana/liquidityPool";
+import { type BridgeJob } from "@/lib/bridge/bridgeWorkflow";
 
 const POOL_INFO: Record<string, { apr: number; fee: number }> = {
   'SOL/USDC': { apr: 24.5, fee: 0.25 },
@@ -259,6 +260,7 @@ export function ConfigPanel() {
 
   // Dynamic preview state for Claim Rewards
   const [claimPreview, setClaimPreview] = useState<{summary: string, usd: number} | null>(null);
+  const [bridgeJob, setBridgeJob] = useState<BridgeJob | null>(null);
 
   // Fetch real LP claim previews dynamically
   useEffect(() => {
@@ -289,6 +291,28 @@ export function ConfigPanel() {
       const interval = setInterval(getPreview, 3000);
       return () => clearInterval(interval);
     }
+  }, [selectedNode]);
+
+  useEffect(() => {
+    if (selectedNode?.data?.type !== 'bridge') {
+      setBridgeJob(null);
+      return;
+    }
+    let active = true;
+    const loadBridgeJob = async () => {
+      const { getLatestBridgeJobForNode } = await import('@/lib/bridge/bridgeWorkflow');
+      if (!active) return;
+      setBridgeJob(getLatestBridgeJobForNode(selectedNode.id));
+    };
+    loadBridgeJob();
+    const interval = setInterval(loadBridgeJob, 2000);
+    const bridgeUpdateHandler = () => loadBridgeJob();
+    window.addEventListener('bridge-job-updated', bridgeUpdateHandler);
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener('bridge-job-updated', bridgeUpdateHandler);
+    };
   }, [selectedNode]);
 
   // Update form based on selected node
@@ -570,6 +594,28 @@ export function ConfigPanel() {
         setTokenCreationConfig({ moduleName: "Create Token", symbol: "TKN", decimals: "6", initialSupply: "1000000" });
         break;
     }
+  };
+
+  const handleBridgeRetry = async () => {
+    if (!bridgeJob?.id) return;
+    const { retryBridgeJob } = await import('@/lib/bridge/bridgeWorkflow');
+    const updated = retryBridgeJob(bridgeJob.id);
+    setBridgeJob(updated);
+    toast({
+      title: "Bridge Monitoring Restarted",
+      description: "The bridge request was reset to waiting state.",
+    });
+  };
+
+  const handleBridgeCancel = async () => {
+    if (!bridgeJob?.id) return;
+    const { cancelBridgeJob } = await import('@/lib/bridge/bridgeWorkflow');
+    const updated = cancelBridgeJob(bridgeJob.id);
+    setBridgeJob(updated);
+    toast({
+      title: "Bridge Cancelled",
+      description: "The bridge request has been cancelled.",
+    });
   };
 
   if (!isOpen) {
@@ -1178,11 +1224,91 @@ export function ConfigPanel() {
             <Card className="bg-muted p-3 text-xs">
               <div className="flex justify-between mb-1">
                 <span className="text-muted-foreground">Est. Bridging Time:</span>
-                <span>~60 minutes</span>
+                <span>Variable (10-45 min)</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Fee:</span>
                 <span>0.001 BTC</span>
+              </div>
+            </Card>
+
+            <Card className="bg-muted p-3 text-xs border border-orange-400/20 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Bridge Request</span>
+                <span className="font-mono">{bridgeJob ? bridgeJob.id.slice(-10) : 'Not started'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Status</span>
+                <span className="capitalize font-medium text-orange-300">{bridgeJob?.status?.replace(/_/g, ' ') || 'idle'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Confirmations</span>
+                <span>
+                  {bridgeJob ? `${bridgeJob.currentConfirmations}/${bridgeJob.requiredConfirmations}` : '0/1'}
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Last update: {bridgeJob ? new Date(bridgeJob.updatedAt).toLocaleTimeString() : '—'}
+              </div>
+              {bridgeJob?.failureReason && (
+                <div className="rounded border border-red-500/30 bg-red-500/10 p-2 text-red-300">
+                  {bridgeJob.failureReason}
+                </div>
+              )}
+              <div className="space-y-1 max-h-28 overflow-y-auto border border-border rounded p-2 bg-background/40">
+                {(bridgeJob?.logs || []).slice(-5).map((log, idx) => (
+                  <div key={idx} className="text-[11px]">
+                    <span className="text-muted-foreground mr-1">
+                      {new Date(log.at).toLocaleTimeString()}:
+                    </span>
+                    {log.message}
+                  </div>
+                ))}
+                {!bridgeJob && (
+                  <div className="text-[11px] text-muted-foreground">Start execution to see bridge lifecycle logs.</div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={handleBridgeRetry}
+                  disabled={!bridgeJob || bridgeJob.status === 'minted'}
+                >
+                  Retry
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={handleBridgeCancel}
+                  disabled={!bridgeJob || bridgeJob.status === 'minted' || bridgeJob.status === 'cancelled'}
+                >
+                  Cancel
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 gap-1">
+                {bridgeJob?.btcTxId && (
+                  <a
+                    href={`https://mempool.space/testnet/tx/${bridgeJob.btcTxId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline"
+                  >
+                    View BTC tx
+                  </a>
+                )}
+                {bridgeJob?.solanaTxId && (
+                  <a
+                    href={`https://explorer.solana.com/tx/${bridgeJob.solanaTxId}?cluster=devnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-400 hover:underline"
+                  >
+                    View Solana mint tx
+                  </a>
+                )}
               </div>
             </Card>
           </div>
