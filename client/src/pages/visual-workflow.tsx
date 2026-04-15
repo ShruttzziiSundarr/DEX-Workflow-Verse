@@ -32,6 +32,7 @@ export default function VisualWorkflowPage() {
                 <Button variant="ghost" size="sm" onClick={() => window.location.href = '/'}>Builder</Button>
                 <Button variant="ghost" size="sm" onClick={() => window.location.href = '/workflows'}>Workflows</Button>
                 <Button variant="ghost" size="sm" className="text-blue-600 font-semibold" disabled>Visual</Button>
+                <Button variant="ghost" size="sm" onClick={() => window.location.href = '/explore'}>Explore</Button>
                 <Button variant="ghost" size="sm" onClick={() => window.location.href = '/dashboard'}>
                   <LayoutDashboard className="h-4 w-4 mr-1" />
                   Dashboard

@@ -84,6 +84,7 @@ export default function Workflows() {
                 <a href="/"><Button variant="ghost" size="sm">Builder</Button></a>
                 <Button variant="ghost" size="sm" className="text-primary font-semibold" disabled>Workflows</Button>
                 <a href="/visual"><Button variant="ghost" size="sm">Visual</Button></a>
+                <a href="/explore"><Button variant="ghost" size="sm">Explore</Button></a>
                 <a href="/dashboard"><Button variant="ghost" size="sm">Dashboard</Button></a>
               </nav>
             </div>

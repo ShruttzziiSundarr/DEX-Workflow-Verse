@@ -167,6 +167,43 @@ export default function Home() {
     return () => window.removeEventListener('open-operation-manual', handler);
   }, []);
 
+  // Deep-linking from Explore Page
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+    const pool = params.get('pool');
+    
+    if (action && pool) {
+      const newNodeId = `node-${Date.now()}`;
+      const type = action === 'lp' ? 'liquidity' : 'swap';
+      
+      const newNode = {
+        id: newNodeId,
+        type: 'workflowNode',
+        position: { x: 250, y: 150 },
+        data: {
+          label: action === 'lp' ? 'Add Liquidity' : 'Token Swap',
+          type: type as any,
+          config: {
+            poolAddress: pool,
+            protocol: 'raydium', // Default for deep-links
+            poolId: pool
+          }
+        }
+      };
+      
+      setNodes((nds: any) => [...nds, newNode]);
+      
+      toast({
+        title: 'Module Imported',
+        description: `Imported ${type} configuration for pool ${pool.substring(0, 8)}...`,
+      });
+
+      // Clear params to avoid duplicate adds
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [setNodes, toast]);
+
   const handleSave = async () => {
     await saveWorkflow();
   };
@@ -289,6 +326,12 @@ export default function Home() {
               <Button variant="ghost" size="sm" className="flex items-center gap-1.5 text-sm">
                 <span className="material-icons text-sm">schema</span>
                 Visual
+              </Button>
+            </a>
+            <a href="/explore">
+              <Button variant="ghost" size="sm" className="flex items-center gap-1.5 text-sm">
+                <span className="material-icons text-sm">explore</span>
+                Explore
               </Button>
             </a>
             <a href="/dashboard">

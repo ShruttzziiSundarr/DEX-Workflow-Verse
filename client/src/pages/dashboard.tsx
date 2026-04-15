@@ -561,6 +561,7 @@ export default function Dashboard() {
                 <a href="/"><Button variant="ghost" size="sm">Builder</Button></a>
                 <a href="/workflows"><Button variant="ghost" size="sm">Workflows</Button></a>
                 <a href="/visual"><Button variant="ghost" size="sm">Visual</Button></a>
+                <a href="/explore"><Button variant="ghost" size="sm">Explore</Button></a>
                 <Button variant="ghost" size="sm" className="text-primary font-semibold" disabled>
                   Dashboard
                 </Button>
