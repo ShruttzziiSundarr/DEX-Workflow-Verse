@@ -31,6 +31,40 @@ const nodeTypes: NodeTypes = {
 
 const INITIAL_VIEWPORT = { x: 0, y: 0, zoom: 1 };
 
+const DEVNET_TOKEN_MINTS: Record<string, string> = {
+  SOL: 'So11111111111111111111111111111111111111112',
+  USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',  // Devnet USDC
+  USDT: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',  // Devnet USDT
+  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  RAY: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R',
+  ORCA: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
+};
+
+const MAINNET_TOKEN_MINTS: Record<string, string> = {
+  SOL: 'So11111111111111111111111111111111111111112',
+  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',  // Mainnet USDC
+  USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',  // Mainnet USDT
+  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  RAY: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R',
+  ORCA: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
+};
+
+const TOKEN_DECIMALS: Record<string, number> = {
+  SOL: 9,
+  USDC: 6,
+  USDT: 6,
+  BONK: 5,
+  RAY: 6,
+  ORCA: 6,
+};
+
+function resolveTokenMint(symbolOrAddress: string, cluster: 'devnet' | 'mainnet-beta' = 'devnet') {
+  const normalized = symbolOrAddress?.trim().toUpperCase();
+  if (!normalized || normalized.length === 0) return '';
+  const map = cluster === 'devnet' ? DEVNET_TOKEN_MINTS : MAINNET_TOKEN_MINTS;
+  return map[normalized] || symbolOrAddress;
+}
+
 export function WorkflowCanvas() {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
@@ -265,24 +299,12 @@ export function WorkflowCanvas() {
         // Get token symbols from config (support both old mint-based and new symbol-based config)
         const sourceToken = cfg.sourceToken || cfg.inputSymbol || 'SOL';
         const targetToken = cfg.targetToken || cfg.outputSymbol || 'USDC';
+        const protocolRaw = (cfg.protocol || 'jupiter') as string;
+        const protocol = protocolRaw === 'sushiswap' ? 'jupiter' : protocolRaw;
+        const cluster = cfg.cluster || (protocol === 'jupiter' ? 'mainnet-beta' : 'devnet');
 
-        // Map token symbols to devnet mints
-        const TOKEN_TO_MINT: Record<string, string> = {
-          'SOL': 'So11111111111111111111111111111111111111112',
-          'USDC': '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-          'USDT': 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',
-          'BONK': 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-        };
-
-        const TOKEN_DECIMALS: Record<string, number> = {
-          'SOL': 9,
-          'USDC': 6,
-          'USDT': 6,
-          'BONK': 5,
-        };
-
-        const inputMint = cfg.inputToken || TOKEN_TO_MINT[sourceToken] || TOKEN_TO_MINT['SOL'];
-        const outputMint = cfg.outputToken || TOKEN_TO_MINT[targetToken] || TOKEN_TO_MINT['USDC'];
+        const inputMint = cfg.sourceMint || cfg.inputToken || resolveTokenMint(sourceToken, cluster) || resolveTokenMint('SOL', cluster);
+        const outputMint = cfg.targetMint || cfg.outputToken || resolveTokenMint(targetToken, cluster) || resolveTokenMint('USDC', cluster);
 
         const uiAmount = parseFloat(cfg.amount || '1.0');
         const slippageBps = parseInt(cfg.slippageBps || String(parseFloat(cfg.slippage || '1') * 100));
@@ -290,21 +312,62 @@ export function WorkflowCanvas() {
         const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
         const outputDecimals = TOKEN_DECIMALS[targetToken] || 6;
 
-        toast({ title: 'Executing Swap...', description: `Swapping ${uiAmount} ${sourceToken} -> ${targetToken} (devnet mock)` });
+        toast({ title: 'Executing Swap...', description: `Swapping ${uiAmount} ${sourceToken} -> ${targetToken} via ${protocol} on ${cluster}` });
 
         try {
           setNodeExecStatus(swapNode.id, 'running');
-          const result = await jupiterSwap({
-            inputMint,
-            outputMint,
-            uiAmount,
-            inputDecimals,
-            outputDecimals,
-            slippageBps,
-            userPublicKey,
-            destinationWallet: userPublicKey,
-            cluster: 'devnet',
-          });
+          let result: any;
+
+          if (protocol === 'jupiter') {
+            result = await jupiterSwap({
+              inputMint,
+              outputMint,
+              uiAmount,
+              inputDecimals,
+              outputDecimals,
+              slippageBps,
+              userPublicKey,
+              destinationWallet: userPublicKey,
+              cluster,
+            });
+          } else {
+            const { routedSwap } = await import('../lib/solana/dexRouter');
+            try {
+              result = await routedSwap({
+                inputMintAddress: inputMint,
+                outputMintAddress: outputMint,
+                inputAmount: uiAmount,
+                inputDecimals,
+                outputDecimals,
+                slippageBps,
+                walletAddress: userPublicKey,
+                cluster,
+                protocol: protocol as any,
+                orcaPoolAddress: protocol === 'orca' ? cfg.poolAddress?.trim() : undefined,
+                raydiumPoolId: protocol === 'raydium' ? cfg.poolId?.trim() : undefined,
+              });
+            } catch (routeError: any) {
+              if (cluster === 'devnet') {
+                console.warn('[Swap] Route failed on devnet, falling back to Jupiter mock if possible:', routeError?.message);
+                const fallback = await jupiterSwap({
+                  inputMint,
+                  outputMint,
+                  uiAmount,
+                  inputDecimals,
+                  outputDecimals,
+                  slippageBps,
+                  userPublicKey,
+                  destinationWallet: userPublicKey,
+                  cluster,
+                  forceMock: true,
+                });
+                fallback.message = `[Fallback to Jupiter] ${fallback.message}`;
+                result = fallback;
+              } else {
+                throw routeError;
+              }
+            }
+          }
 
           toast({
             title: 'Swap Completed',
@@ -326,6 +389,7 @@ export function WorkflowCanvas() {
               inputAmount: uiAmount,
               outputAmount: result.outputAmount?.toFixed(4),
               mode: result.mode,
+              protocol,
             },
           });
         } catch (swapError: any) {
@@ -364,6 +428,7 @@ export function WorkflowCanvas() {
         const lpAction = cfg.action || (nodeType === 'removeLiquidity' ? 'removeLiquidity' : 'addLiquidity');
         const tokenA = cfg.tokenA || 'SOL';
         const tokenB = cfg.tokenB || 'USDC';
+        const poolAddress = (cfg.poolAddress || cfg.poolId || '').trim();
         const amountA = parseFloat(cfg.amountA || '1.0');
         const amountB = parseFloat(cfg.amountB || '150.0');
         const lpTokenAmount = parseFloat(cfg.lpTokenAmount || '10');
@@ -375,6 +440,7 @@ export function WorkflowCanvas() {
             setNodeExecStatus(lpNode.id, 'running');
             const result = await handleLiquidityPool({
               action: 'addLiquidity', tokenA, tokenB, amountA, amountB, slippage,
+              poolAddress,
               fromPubkey: new PublicKey(userPublicKey),
             });
             toast({ title: 'Liquidity Added ✓', description: result.message });
@@ -389,6 +455,7 @@ export function WorkflowCanvas() {
             setNodeExecStatus(lpNode.id, 'running');
             const result = await handleLiquidityPool({
               action: 'removeLiquidity', tokenA, tokenB, lpTokenAmount, slippage,
+              poolAddress,
               fromPubkey: new PublicKey(userPublicKey),
             });
             toast({ title: 'Liquidity Removed ✓', description: result.message });
@@ -604,25 +671,21 @@ export function WorkflowCanvas() {
         const targetToken = cfg.targetToken || 'USDC';
         const uiAmount    = parseFloat(cfg.amount || '1.0');
         const slippageBps = Math.round(parseFloat(cfg.slippage || '1') * 100);
-        const TOKEN_TO_MINT: Record<string, string> = {
-          SOL:  'So11111111111111111111111111111111111111112',
-          USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-          USDT: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',
-          BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-        };
-        const TOKEN_DECIMALS: Record<string, number> = { SOL: 9, USDC: 6, USDT: 6, BONK: 5 };
-        const inputMint    = TOKEN_TO_MINT[sourceToken] || TOKEN_TO_MINT['SOL'];
+        const inputMint = cfg.sourceMint || resolveTokenMint(sourceToken, 'devnet');
+        const outputMint = cfg.targetMint || resolveTokenMint(targetToken, 'devnet');
         const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
+        const outputDecimals = TOKEN_DECIMALS[targetToken] || 6;
+
         toast({ title: 'Executing Orca Swap…', description: `${uiAmount} ${sourceToken} → ${targetToken} via Orca Whirlpools` });
         try {
           setNodeExecStatus(oNode.id, 'running');
-          // Try Orca; on devnet fall back to mock swap if no pool exists
+          // Try Orca first; on devnet fall back to a registered Raydium CPMM pool or mock swap
           let result: any;
           try {
             const { swapOnOrca } = await import('../lib/solana/orcaWhirlpool');
             const poolAddress = cfg.poolAddress?.trim();
-            if (!poolAddress) throw new Error('No Orca pool address configured — falling back to mock');
-            result = await swapOnOrca({
+            if (!poolAddress) throw new Error('No Orca pool address configured.');
+            const r = await swapOnOrca({
               poolAddress,
               inputMintAddress: inputMint,
               inputAmount: uiAmount,
@@ -631,11 +694,11 @@ export function WorkflowCanvas() {
               fromPubkey: new PublicKey(userPublicKey),
               cluster: 'devnet',
             });
-            result = { signature: result.txId, outputAmount: undefined, mode: 'real', message: result.message };
+            result = { signature: r.txId, outputAmount: undefined, mode: 'real', message: r.message };
           } catch (orcaErr: any) {
-            console.warn('[OrcaSwap] Orca failed, falling back to mock:', orcaErr.message);
+            console.warn('[OrcaSwap] Orca failed, falling back to Jupiter mock:', orcaErr.message);
             const { jupiterSwap } = await import('../lib/solana/jupiterSwap');
-            result = await jupiterSwap({ inputMint, outputMint: TOKEN_TO_MINT[targetToken] || TOKEN_TO_MINT['USDC'], uiAmount, inputDecimals, outputDecimals: TOKEN_DECIMALS[targetToken] || 6, slippageBps, userPublicKey, cluster: 'devnet' });
+            result = await jupiterSwap({ inputMint, outputMint, uiAmount, inputDecimals, outputDecimals, slippageBps, userPublicKey, cluster: 'devnet', forceMock: true });
             result.message = `[Orca fallback] ${result.message}`;
           }
           toast({ title: 'Orca Swap Completed ✓', description: result.message });
@@ -657,16 +720,11 @@ export function WorkflowCanvas() {
         const targetToken = cfg.targetToken || 'USDC';
         const uiAmount    = parseFloat(cfg.amount || '1.0');
         const slippageBps = Math.round(parseFloat(cfg.slippage || '1') * 100);
-        const TOKEN_TO_MINT: Record<string, string> = {
-          SOL:  'So11111111111111111111111111111111111111112',
-          USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',
-          USDT: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',
-          BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
-        };
-        const TOKEN_DECIMALS: Record<string, number> = { SOL: 9, USDC: 6, USDT: 6, BONK: 5 };
-        const inputMint     = TOKEN_TO_MINT[sourceToken] || TOKEN_TO_MINT['SOL'];
-        const outputMint    = TOKEN_TO_MINT[targetToken] || TOKEN_TO_MINT['USDC'];
+        const inputMint = cfg.sourceMint || resolveTokenMint(sourceToken, 'devnet');
+        const outputMint = cfg.targetMint || resolveTokenMint(targetToken, 'devnet');
         const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
+        const outputDecimals = TOKEN_DECIMALS[targetToken] || 6;
+
         toast({ title: 'Executing Raydium Swap…', description: `${uiAmount} ${sourceToken} → ${targetToken} via Raydium CPMM` });
         try {
           setNodeExecStatus(rNode.id, 'running');
@@ -678,9 +736,9 @@ export function WorkflowCanvas() {
             const cpmmResult = await swapInCpmmPool({ poolId: pool.poolId, inputMintAddress: inputMint, inputAmount: uiAmount, inputDecimals, slippageBps, fromPubkey: new PublicKey(userPublicKey) });
             result = { signature: cpmmResult.txId, mode: 'real', message: cpmmResult.message };
           } catch (rayErr: any) {
-            console.warn('[RaydiumSwap] Raydium failed, falling back to mock:', rayErr.message);
+            console.warn('[RaydiumSwap] Raydium failed, falling back to Jupiter mock:', rayErr.message);
             const { jupiterSwap } = await import('../lib/solana/jupiterSwap');
-            result = await jupiterSwap({ inputMint, outputMint, uiAmount, inputDecimals, outputDecimals: TOKEN_DECIMALS[targetToken] || 6, slippageBps, userPublicKey, cluster: 'devnet' });
+            result = await jupiterSwap({ inputMint, outputMint, uiAmount, inputDecimals, outputDecimals, slippageBps, userPublicKey, cluster: 'devnet', forceMock: true });
             result.message = `[Raydium fallback] ${result.message}`;
           }
           toast({ title: 'Raydium Swap Completed ✓', description: result.message });

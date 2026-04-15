@@ -20,14 +20,50 @@ const POOL_INFO: Record<string, { apr: number; fee: number }> = {
   'SOL/RAY': { apr: 32.1, fee: 0.25 },
 };
 
+// Protocol-aware token options
+const getTokenOptions = (protocol: string) => {
+  const commonTokens = [
+    { value: 'SOL', label: 'SOL', mint: 'So11111111111111111111111111111111111111112' },
+    { value: 'USDC', label: 'USDC', mint: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU' },
+    { value: 'USDT', label: 'USDT', mint: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS' },
+    { value: 'CUSTOM', label: 'Custom Mint...', mint: '' },
+  ];
+
+  switch (protocol) {
+    case 'raydium':
+      return [
+        ...commonTokens,
+        { value: 'RAY', label: 'RAY', mint: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R' },
+        { value: 'BONK', label: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+      ];
+    case 'orca':
+      return [
+        ...commonTokens,
+        { value: 'ORCA', label: 'ORCA', mint: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE' },
+      ];
+    case 'jupiter':
+    case 'sushiswap':
+      return [
+        ...commonTokens,
+        { value: 'RAY', label: 'RAY', mint: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R' },
+        { value: 'BONK', label: 'BONK', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' },
+        { value: 'ORCA', label: 'ORCA', mint: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE' },
+      ];
+    default:
+      return commonTokens;
+  }
+};
+
 type CommonConfig = {
   moduleName: string;
 };
 
 type SwapConfig = CommonConfig & {
-  protocol: 'jupiter' | 'raydium' | 'orca';
+  protocol: 'jupiter' | 'raydium' | 'orca' | 'sushiswap';
   sourceToken: string;
+  sourceMint?: string; // For custom mint addresses
   targetToken: string;
+  targetMint?: string; // For custom mint addresses
   amount: string;
   slippage: string;
   useBestRoute?: boolean;
@@ -77,7 +113,9 @@ type LiquidityPoolConfig = CommonConfig & {
   protocol: 'raydium' | 'orca';
   action: 'addLiquidity' | 'removeLiquidity' | 'createPool';
   tokenA: string;
+  tokenAMint?: string;
   tokenB: string;
+  tokenBMint?: string;
   amountA: string;
   amountB: string;
   lpTokenAmount: string;
@@ -88,7 +126,9 @@ type LiquidityPoolConfig = CommonConfig & {
 
 type OrcaSwapConfig = CommonConfig & {
   sourceToken: string;
+  sourceMint?: string;
   targetToken: string;
+  targetMint?: string;
   amount: string;
   slippage: string;
   poolAddress: string;
@@ -96,7 +136,9 @@ type OrcaSwapConfig = CommonConfig & {
 
 type RaydiumSwapConfig = CommonConfig & {
   sourceToken: string;
+  sourceMint?: string;
   targetToken: string;
+  targetMint?: string;
   amount: string;
   slippage: string;
   poolId: string;
@@ -117,7 +159,7 @@ export function ConfigPanel() {
   // State for different module configurations
   const [swapConfig, setSwapConfig] = useState<SwapConfig>({
     moduleName: "Swap Tokens",
-    protocol: "jupiter",
+    protocol: "raydium",
     sourceToken: "SOL",
     targetToken: "USDC",
     amount: "1.0",
@@ -295,13 +337,18 @@ export function ConfigPanel() {
     let newData = { ...selectedNode.data };
     
     switch (type) {
-      case "swap":
+      case "swap": {
         newData = {
           ...newData,
           label: swapConfig.moduleName,
-          config: { ...swapConfig }
+          config: { 
+            ...swapConfig,
+            sourceToken: swapConfig.sourceToken,
+            targetToken: swapConfig.targetToken
+          }
         };
         break;
+      }
       case "stake":
         newData = {
           ...newData,
@@ -340,13 +387,16 @@ export function ConfigPanel() {
       case "liquidity":
       case "liquidityPool":
       case "addLiquidity":
-      case "removeLiquidity":
+      case "removeLiquidity": {
+        const effectiveTokenA = lpConfig.tokenA === 'CUSTOM' ? (lpConfig.tokenAMint ?? '') : lpConfig.tokenA;
+        const effectiveTokenB = lpConfig.tokenB === 'CUSTOM' ? (lpConfig.tokenBMint ?? '') : lpConfig.tokenB;
         newData = {
           ...newData,
           label: lpConfig.moduleName,
-          config: { ...lpConfig }
+          config: { ...lpConfig, tokenA: effectiveTokenA, tokenB: effectiveTokenB }
         };
         break;
+      }
       case "orcaSwap":
         newData = { ...newData, label: orcaSwapConfig.moduleName, config: { ...orcaSwapConfig } };
         break;
@@ -519,15 +569,28 @@ export function ConfigPanel() {
               <Label className="text-xs text-muted-foreground">Protocol</Label>
               <Select
                 value={swapConfig.protocol}
-                onValueChange={(value: 'jupiter' | 'raydium' | 'orca') => setSwapConfig({...swapConfig, protocol: value})}
+                onValueChange={(value: 'jupiter' | 'raydium' | 'orca' | 'sushiswap') => {
+                  // Reset tokens when protocol changes
+                  setSwapConfig({
+                    ...swapConfig, 
+                    protocol: value,
+                    sourceToken: 'SOL',
+                    sourceMint: '',
+                    targetToken: 'USDC', 
+                    targetMint: '',
+                    poolId: '',
+                    poolAddress: ''
+                  });
+                }}
               >
                 <SelectTrigger className="mt-1 bg-background border-border">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="jupiter">Jupiter (Best Route)</SelectItem>
-                  <SelectItem value="raydium">Raydium CPMM</SelectItem>
+                  <SelectItem value="raydium">Raydium CPMM (Devnet)</SelectItem>
                   <SelectItem value="orca">Orca Whirlpools</SelectItem>
+                  <SelectItem value="jupiter">Jupiter (Mainnet)</SelectItem>
+                  <SelectItem value="sushiswap">SushiSwap</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -536,36 +599,54 @@ export function ConfigPanel() {
               <Label className="text-xs text-muted-foreground">Source Token</Label>
               <Select
                 value={swapConfig.sourceToken}
-                onValueChange={(value) => setSwapConfig({...swapConfig, sourceToken: value})}
+                onValueChange={(value) => setSwapConfig({...swapConfig, sourceToken: value, sourceMint: ''})}
               >
                 <SelectTrigger className="mt-1 bg-background border-border">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="SOL">SOL</SelectItem>
-                  <SelectItem value="USDC">USDC</SelectItem>
-                  <SelectItem value="USDT">USDT</SelectItem>
-                  <SelectItem value="BONK">BONK</SelectItem>
+                  {getTokenOptions(swapConfig.protocol).map(token => (
+                    <SelectItem key={token.value} value={token.value}>
+                      {token.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {swapConfig.sourceToken === 'CUSTOM' && (
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste source mint address..."
+                  value={swapConfig.sourceMint ?? ''}
+                  onChange={(e) => setSwapConfig({...swapConfig, sourceMint: e.target.value})}
+                />
+              )}
             </div>
 
             <div>
               <Label className="text-xs text-muted-foreground">Target Token</Label>
               <Select
                 value={swapConfig.targetToken}
-                onValueChange={(value) => setSwapConfig({...swapConfig, targetToken: value})}
+                onValueChange={(value) => setSwapConfig({...swapConfig, targetToken: value, targetMint: ''})}
               >
                 <SelectTrigger className="mt-1 bg-background border-border">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="USDC">USDC</SelectItem>
-                  <SelectItem value="USDT">USDT</SelectItem>
-                  <SelectItem value="SOL">SOL</SelectItem>
-                  <SelectItem value="BONK">BONK</SelectItem>
+                  {getTokenOptions(swapConfig.protocol).map(token => (
+                    <SelectItem key={token.value} value={token.value}>
+                      {token.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {swapConfig.targetToken === 'CUSTOM' && (
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste target mint address..."
+                  value={swapConfig.targetMint ?? ''}
+                  onChange={(e) => setSwapConfig({...swapConfig, targetMint: e.target.value})}
+                />
+              )}
             </div>
             
             <div>
@@ -575,20 +656,14 @@ export function ConfigPanel() {
                   type="text" 
                   value={swapConfig.amount} 
                   onChange={(e) => setSwapConfig({...swapConfig, amount: e.target.value})}
-                  className="rounded-r-none bg-dark-300 border-dark-100"
+                  className="rounded-r-none bg-background border-border"
+                  placeholder="0.0"
                 />
-                <Select
-                  value={swapConfig.sourceToken}
-                  onValueChange={(value) => setSwapConfig({...swapConfig, sourceToken: value})}
-                >
-                  <SelectTrigger className="rounded-l-none min-w-[80px] bg-dark-300 border-dark-100 border-l-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BTC">BTC</SelectItem>
-                    <SelectItem value="Max">Max</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center px-3 bg-muted border border-l-0 rounded-r-md text-xs">
+                  {swapConfig.sourceToken === 'CUSTOM' ? 
+                    (swapConfig.sourceMint ? `${swapConfig.sourceMint.slice(0, 4)}...${swapConfig.sourceMint.slice(-4)}` : 'CUSTOM') : 
+                    swapConfig.sourceToken}
+                </div>
               </div>
             </div>
             
@@ -629,15 +704,42 @@ export function ConfigPanel() {
               </div>
             </div>
             
+            {(swapConfig.protocol === 'orca' || swapConfig.protocol === 'raydium') && (
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  {swapConfig.protocol === 'orca' ? 'Whirlpool Address' : 'Pool ID'}
+                </Label>
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder={
+                    swapConfig.protocol === 'orca'
+                      ? '3KBZiL2g8C7tiJ32hTv5v3KM7aK9htpqTw4cTXz1HvPt (SOL/devUSDC)'
+                      : 'Paste Raydium CPMM pool ID...'
+                  }
+                  value={swapConfig.protocol === 'orca' ? (swapConfig.poolAddress ?? '') : (swapConfig.poolId ?? '')}
+                  onChange={(e) =>
+                    swapConfig.protocol === 'orca'
+                      ? setSwapConfig({...swapConfig, poolAddress: e.target.value})
+                      : setSwapConfig({...swapConfig, poolId: e.target.value})
+                  }
+                />
+                {swapConfig.protocol === 'orca' && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Devnet pool: <span className="font-mono">3KBZiL2g8...HvPt</span> (SOL/devUSDC)
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center space-x-2">
-              <Checkbox 
-                id="useBestRoute" 
+              <Checkbox
+                id="useBestRoute"
                 checked={swapConfig.useBestRoute}
                 onCheckedChange={(checked) => setSwapConfig({...swapConfig, useBestRoute: checked as boolean})}
               />
               <Label htmlFor="useBestRoute">Use best route</Label>
             </div>
-            
+
             <Card className="bg-muted p-3 text-xs">
               <div className="flex justify-between mb-1">
                 <span className="text-muted-foreground">Estimated Output:</span>
@@ -1071,7 +1173,7 @@ export function ConfigPanel() {
                 <Label className="text-xs text-muted-foreground">Token A</Label>
                 <Select
                   value={lpConfig.tokenA}
-                  onValueChange={(value) => setLpConfig({...lpConfig, tokenA: value})}
+                  onValueChange={(value) => setLpConfig({...lpConfig, tokenA: value, tokenAMint: ''})}
                 >
                   <SelectTrigger className="mt-1 bg-background border-border">
                     <SelectValue />
@@ -1079,15 +1181,24 @@ export function ConfigPanel() {
                   <SelectContent>
                     <SelectItem value="SOL">SOL</SelectItem>
                     <SelectItem value="RAY">RAY</SelectItem>
+                    <SelectItem value="CUSTOM">Custom Mint...</SelectItem>
                   </SelectContent>
                 </Select>
+                {lpConfig.tokenA === 'CUSTOM' && (
+                  <Input
+                    className="mt-1 bg-background border-border text-xs"
+                    placeholder="Paste mint address..."
+                    value={lpConfig.tokenAMint ?? ''}
+                    onChange={(e) => setLpConfig({...lpConfig, tokenAMint: e.target.value})}
+                  />
+                )}
               </div>
 
               <div>
                 <Label className="text-xs text-muted-foreground">Token B</Label>
                 <Select
                   value={lpConfig.tokenB}
-                  onValueChange={(value) => setLpConfig({...lpConfig, tokenB: value})}
+                  onValueChange={(value) => setLpConfig({...lpConfig, tokenB: value, tokenBMint: ''})}
                 >
                   <SelectTrigger className="mt-1 bg-background border-border">
                     <SelectValue />
@@ -1096,8 +1207,17 @@ export function ConfigPanel() {
                     <SelectItem value="USDC">USDC</SelectItem>
                     <SelectItem value="USDT">USDT</SelectItem>
                     <SelectItem value="SOL">SOL</SelectItem>
+                    <SelectItem value="CUSTOM">Custom Mint...</SelectItem>
                   </SelectContent>
                 </Select>
+                {lpConfig.tokenB === 'CUSTOM' && (
+                  <Input
+                    className="mt-1 bg-background border-border text-xs"
+                    placeholder="Paste mint address..."
+                    value={lpConfig.tokenBMint ?? ''}
+                    onChange={(e) => setLpConfig({...lpConfig, tokenBMint: e.target.value})}
+                  />
+                )}
               </div>
             </div>
 
@@ -1170,6 +1290,18 @@ export function ConfigPanel() {
                 </Button>
               </div>
             </div>
+
+            {lpConfig.action !== 'createPool' && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Pool Address / ID (optional)</Label>
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste Raydium pool ID or Orca whirlpool address"
+                  value={lpConfig.poolAddress ?? ''}
+                  onChange={(e) => setLpConfig({...lpConfig, poolAddress: e.target.value})}
+                />
+              </div>
+            )}
 
             {(() => {
               const poolKey = `${lpConfig.tokenA}/${lpConfig.tokenB}`;
@@ -1257,27 +1389,45 @@ export function ConfigPanel() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Source Token</Label>
-              <Select value={orcaSwapConfig.sourceToken} onValueChange={(v) => setOrcaSwapConfig({...orcaSwapConfig, sourceToken: v})}>
+              <Select value={orcaSwapConfig.sourceToken} onValueChange={(v) => setOrcaSwapConfig({...orcaSwapConfig, sourceToken: v, sourceMint: ''})}>
                 <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="SOL">SOL</SelectItem>
                   <SelectItem value="USDC">USDC</SelectItem>
                   <SelectItem value="USDT">USDT</SelectItem>
                   <SelectItem value="BONK">BONK</SelectItem>
+                  <SelectItem value="CUSTOM">Custom Mint...</SelectItem>
                 </SelectContent>
               </Select>
+              {orcaSwapConfig.sourceToken === 'CUSTOM' && (
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste source mint address..."
+                  value={orcaSwapConfig.sourceMint ?? ''}
+                  onChange={(e) => setOrcaSwapConfig({...orcaSwapConfig, sourceMint: e.target.value})}
+                />
+              )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Target Token</Label>
-              <Select value={orcaSwapConfig.targetToken} onValueChange={(v) => setOrcaSwapConfig({...orcaSwapConfig, targetToken: v})}>
+              <Select value={orcaSwapConfig.targetToken} onValueChange={(v) => setOrcaSwapConfig({...orcaSwapConfig, targetToken: v, targetMint: ''})}>
                 <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="USDC">USDC</SelectItem>
                   <SelectItem value="USDT">USDT</SelectItem>
                   <SelectItem value="SOL">SOL</SelectItem>
                   <SelectItem value="BONK">BONK</SelectItem>
+                  <SelectItem value="CUSTOM">Custom Mint...</SelectItem>
                 </SelectContent>
               </Select>
+              {orcaSwapConfig.targetToken === 'CUSTOM' && (
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste target mint address..."
+                  value={orcaSwapConfig.targetMint ?? ''}
+                  onChange={(e) => setOrcaSwapConfig({...orcaSwapConfig, targetMint: e.target.value})}
+                />
+              )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Amount</Label>
@@ -1312,27 +1462,45 @@ export function ConfigPanel() {
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Source Token</Label>
-              <Select value={raydiumSwapConfig.sourceToken} onValueChange={(v) => setRaydiumSwapConfig({...raydiumSwapConfig, sourceToken: v})}>
+              <Select value={raydiumSwapConfig.sourceToken} onValueChange={(v) => setRaydiumSwapConfig({...raydiumSwapConfig, sourceToken: v, sourceMint: ''})}>
                 <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="SOL">SOL</SelectItem>
                   <SelectItem value="USDC">USDC</SelectItem>
                   <SelectItem value="USDT">USDT</SelectItem>
                   <SelectItem value="BONK">BONK</SelectItem>
+                  <SelectItem value="CUSTOM">Custom Mint...</SelectItem>
                 </SelectContent>
               </Select>
+              {raydiumSwapConfig.sourceToken === 'CUSTOM' && (
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste source mint address..."
+                  value={raydiumSwapConfig.sourceMint ?? ''}
+                  onChange={(e) => setRaydiumSwapConfig({...raydiumSwapConfig, sourceMint: e.target.value})}
+                />
+              )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Target Token</Label>
-              <Select value={raydiumSwapConfig.targetToken} onValueChange={(v) => setRaydiumSwapConfig({...raydiumSwapConfig, targetToken: v})}>
+              <Select value={raydiumSwapConfig.targetToken} onValueChange={(v) => setRaydiumSwapConfig({...raydiumSwapConfig, targetToken: v, targetMint: ''})}>
                 <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="USDC">USDC</SelectItem>
                   <SelectItem value="USDT">USDT</SelectItem>
                   <SelectItem value="SOL">SOL</SelectItem>
                   <SelectItem value="BONK">BONK</SelectItem>
+                  <SelectItem value="CUSTOM">Custom Mint...</SelectItem>
                 </SelectContent>
               </Select>
+              {raydiumSwapConfig.targetToken === 'CUSTOM' && (
+                <Input
+                  className="mt-1 bg-background border-border text-xs"
+                  placeholder="Paste target mint address..."
+                  value={raydiumSwapConfig.targetMint ?? ''}
+                  onChange={(e) => setRaydiumSwapConfig({...raydiumSwapConfig, targetMint: e.target.value})}
+                />
+              )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Amount</Label>

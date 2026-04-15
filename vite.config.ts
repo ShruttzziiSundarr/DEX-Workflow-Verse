@@ -34,7 +34,7 @@ export default defineConfig({
     'process.env': {},
   },
   optimizeDeps: {
-    include: ['buffer', '@marinade.finance/marinade-ts-sdk'],
+    include: ['buffer', '@marinade.finance/marinade-ts-sdk', '@solana/spl-token'],
     exclude: ['@raydium-io/raydium-sdk-v2'],
     esbuildOptions: {
       define: {

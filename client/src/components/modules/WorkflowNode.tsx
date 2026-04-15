@@ -73,11 +73,11 @@ const getNodeContent = (type: ModuleType, config: any) => {
         <>
           <div className="flex justify-between items-center mb-1">
             <span>From:</span>
-            <span className="font-mono">{config?.sourceToken || "SOL"}</span>
+            <span className="font-mono">{config?.sourceToken === 'CUSTOM' ? config?.sourceMint || 'CUSTOM' : config?.sourceToken || 'SOL'}</span>
           </div>
           <div className="flex justify-between items-center">
             <span>To:</span>
-            <span className="font-mono">{config?.targetToken || "USDC"}</span>
+            <span className="font-mono">{config?.targetToken === 'CUSTOM' ? config?.targetMint || 'CUSTOM' : config?.targetToken || 'USDC'}</span>
           </div>
         </>
       );
@@ -160,11 +160,11 @@ const getNodeContent = (type: ModuleType, config: any) => {
         <>
           <div className="flex justify-between items-center mb-1">
             <span>From:</span>
-            <span className="font-mono">{config?.sourceToken || "SOL"}</span>
+            <span className="font-mono">{config?.sourceToken === 'CUSTOM' ? config?.sourceMint || 'CUSTOM' : config?.sourceToken || 'SOL'}</span>
           </div>
           <div className="flex justify-between items-center">
             <span>To:</span>
-            <span className="font-mono">{config?.targetToken || "USDC"}</span>
+            <span className="font-mono">{config?.targetToken === 'CUSTOM' ? config?.targetMint || 'CUSTOM' : config?.targetToken || 'USDC'}</span>
           </div>
         </>
       );

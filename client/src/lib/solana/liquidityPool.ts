@@ -178,6 +178,21 @@ function getConnection(cluster: Cluster): Connection {
   return new Connection(clusterApiUrl(cluster), 'confirmed');
 }
 
+const DEVNET_TOKEN_MINTS: Record<string, string> = {
+  SOL: 'So11111111111111111111111111111111111111112',
+  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  RAY: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R',
+  ORCA: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
+};
+
+function resolveDevnetMint(symbolOrAddress: string): string {
+  const normalized = symbolOrAddress?.trim().toUpperCase();
+  if (!normalized) return '';
+  return DEVNET_TOKEN_MINTS[normalized] || symbolOrAddress;
+}
+
 // ─── Math helpers ─────────────────────────────────────────────────────────────
 
 function calculateLPTokens(amountA: number, amountB: number, pool: PoolInfo): number {
@@ -242,17 +257,22 @@ export async function handleLiquidityPool({
   const isRealPoolId = (id?: string) =>
     !!id && !id.startsWith('MockPool') && id.length >= 32;
 
+  const normalizedTokenA = resolveDevnetMint(tokenA);
+  const normalizedTokenB = resolveDevnetMint(tokenB);
+
   if (cluster === 'devnet' && (action === 'createPool' || isRealPoolId(poolAddress))) {
     const {
       createCustomTokenPool, addLiquidityToCpmm,
-      removeLiquidityFromCpmm,
+      removeLiquidityFromCpmm, getCustomPoolByMints,
     } = await import('./raydiumDevnet');
+
+    const resolvedPoolAddress = poolAddress || getCustomPoolByMints(normalizedTokenA, normalizedTokenB)?.poolId;
 
     try {
       if (action === 'createPool') {
         const result = await createCustomTokenPool({
-          mintAAddress: tokenA,
-          mintBAddress: tokenB,
+          mintAAddress: normalizedTokenA,
+          mintBAddress: normalizedTokenB,
           mintASymbol: tokenA.slice(0, 8),
           mintBSymbol: tokenB.slice(0, 8),
           mintADecimals,
@@ -271,11 +291,17 @@ export async function handleLiquidityPool({
         };
       }
 
+      if (!resolvedPoolAddress) {
+        throw new Error(
+          'No Raydium CPMM pool ID provided. Create a pool first or provide the pool address in the liquidity module config.'
+        );
+      }
+
       if (action === 'addLiquidity') {
         if (!amountA || amountA <= 0) throw new Error('amountA is required for addLiquidity');
         const result = await addLiquidityToCpmm({
-          poolId: poolAddress!,
-          inputMintAddress: tokenA,
+          poolId: resolvedPoolAddress,
+          inputMintAddress: normalizedTokenA,
           inputAmount: amountA,
           inputDecimals: mintADecimals,
           slippageBps: Math.round(slippage * 100),
@@ -284,7 +310,7 @@ export async function handleLiquidityPool({
         return {
           success: true,
           signature: result.txId,
-          poolAddress: poolAddress,
+          poolAddress: resolvedPoolAddress,
           mode: 'real',
           message: result.message,
         };
@@ -293,8 +319,8 @@ export async function handleLiquidityPool({
       if (action === 'removeLiquidity') {
         if (!lpTokenAmount || lpTokenAmount <= 0) throw new Error('lpTokenAmount is required for removeLiquidity');
         const result = await removeLiquidityFromCpmm({
-          poolId: poolAddress!,
-          inputMintAddress: tokenA,
+          poolId: resolvedPoolAddress,
+          inputMintAddress: normalizedTokenA,
           lpAmount: lpTokenAmount,
           slippageBps: Math.round(slippage * 100),
           fromPubkey,
@@ -302,7 +328,7 @@ export async function handleLiquidityPool({
         return {
           success: true,
           signature: result.txId,
-          poolAddress: poolAddress,
+          poolAddress: resolvedPoolAddress,
           mode: 'real',
           message: result.message,
         };
@@ -316,114 +342,9 @@ export async function handleLiquidityPool({
     }
   }
 
-  // ── DEVNET MOCK PATH (demo tokens: SOL/USDC, SOL/USDT, RAY/SOL) ─────────────
+  // ── STRICT ON-CHAIN ENFORCEMENT ─────────────────────────────────────────────
   if (cluster === 'devnet') {
-    const poolKey = `${tokenA}/${tokenB}`;
-    const reverseKey = `${tokenB}/${tokenA}`;
-    const pool = MOCK_POOLS[poolKey] || MOCK_POOLS[reverseKey];
-    if (!pool) throw new Error(`Pool ${poolKey} not found. Available: ${Object.keys(MOCK_POOLS).join(', ')}`);
-
-    const now = Date.now();
-
-    if (action === 'addLiquidity') {
-      if (!amountA || !amountB || amountA <= 0 || amountB <= 0)
-        throw new Error('Both token amounts are required for adding liquidity');
-
-      const lpTokensReceived = calculateLPTokens(amountA, amountB, pool) * (1 - slippage / 100);
-
-      // Send real on-chain tx to get a confirmed signature
-      let signature: string;
-      if (isBrowser) {
-        signature = await sendDevnetAnchorTx(fromPubkey, connection);
-      } else {
-        await new Promise(r => setTimeout(r, 1500));
-        signature = 'mock_lp_add_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
-      }
-
-      // Persist LP position
-      const userKey = fromPubkey.toBase58();
-      const allPositions = loadStoredPositions();
-      const positions = allPositions[userKey] || [];
-      const existing = positions.find(p => p.poolAddress === pool.poolAddress);
-
-      if (existing) {
-        existing.lpBalance += lpTokensReceived;
-        existing.sharePercentage = (existing.lpBalance / (pool.lpSupply + existing.lpBalance)) * 100;
-        existing.tokenAValue += amountA;
-        existing.tokenBValue += amountB;
-        existing.valueUSD = existing.tokenBValue * 2;
-        // keep original createdAt, update lastClaimedAt only if never set
-        if (!existing.lastClaimedAt) existing.lastClaimedAt = now;
-      } else {
-        positions.push({
-          poolAddress: pool.poolAddress,
-          lpBalance: lpTokensReceived,
-          sharePercentage: (lpTokensReceived / (pool.lpSupply + lpTokensReceived)) * 100,
-          tokenAValue: amountA,
-          tokenBValue: amountB,
-          valueUSD: amountB * 2,
-          createdAt: now,
-          lastClaimedAt: now,
-        });
-      }
-      allPositions[userKey] = positions;
-      saveStoredPositions(allPositions);
-      const addedPosition = positions.find(p => p.poolAddress === pool.poolAddress)!;
-      void syncPositionToAPI(userKey, addedPosition);
-
-      return {
-        success: true, signature,
-        lpTokensReceived,
-        poolAddress: pool.poolAddress,
-        mode: 'mock',
-        message: `Added ${amountA} ${tokenA} + ${amountB} ${tokenB} → received ${lpTokensReceived.toFixed(4)} LP tokens`,
-      };
-    }
-
-    // removeLiquidity
-    if (!lpTokenAmount || lpTokenAmount <= 0)
-      throw new Error('LP token amount is required for removing liquidity');
-
-    const { tokenA: rawA, tokenB: rawB } = calculateTokensFromLP(lpTokenAmount, pool);
-    const tokenAReceived = rawA * (1 - slippage / 100);
-    const tokenBReceived = rawB * (1 - slippage / 100);
-
-    let signature: string;
-    if (isBrowser) {
-      signature = await sendDevnetAnchorTx(fromPubkey, connection);
-    } else {
-      await new Promise(r => setTimeout(r, 1500));
-      signature = 'mock_lp_rem_' + Math.random().toString(36).slice(2, 14) + Date.now().toString(36);
-    }
-
-    // Update persisted position
-    const userKey = fromPubkey.toBase58();
-    const allPositions = loadStoredPositions();
-    const positions = allPositions[userKey] || [];
-    const idx = positions.findIndex(p => p.poolAddress === pool.poolAddress);
-    if (idx >= 0) {
-      positions[idx].lpBalance -= lpTokenAmount;
-      if (positions[idx].lpBalance <= 0) {
-        positions.splice(idx, 1);
-        void deletePositionFromAPI(userKey, pool.poolAddress);
-      } else {
-        positions[idx].sharePercentage = (positions[idx].lpBalance / pool.lpSupply) * 100;
-        positions[idx].tokenAValue = Math.max(0, positions[idx].tokenAValue - tokenAReceived);
-        positions[idx].tokenBValue = Math.max(0, positions[idx].tokenBValue - tokenBReceived);
-        positions[idx].valueUSD = positions[idx].tokenBValue * 2;
-        void syncPositionToAPI(userKey, positions[idx]);
-      }
-      allPositions[userKey] = positions;
-      saveStoredPositions(allPositions);
-    }
-
-    return {
-      success: true, signature,
-      tokenAReceived, tokenBReceived,
-      poolAddress: pool.poolAddress,
-      mode: 'mock',
-      message: `Removed ${lpTokenAmount} LP tokens → received ${tokenAReceived.toFixed(4)} ${tokenA} + ${tokenBReceived.toFixed(4)} ${tokenB}`,
-    };
+    throw new Error('No on-chain pool found. On Devnet, official pools do not exist. Please use the "Create Pool" action to deploy a custom pool first before adding or removing liquidity.');
   }
 
   // ── MAINNET (Raydium) ────────────────────────────────────────────────────────

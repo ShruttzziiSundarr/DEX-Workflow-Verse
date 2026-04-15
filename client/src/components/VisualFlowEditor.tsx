@@ -425,7 +425,7 @@ const VisualFlowEditor = () => {
         </div>
         
         {/* Flow canvas */}
-        <div className="flex-1 h-full" ref={reactFlowWrapper}>
+        <div className="flex-1 h-full relative" ref={reactFlowWrapper} style={{ width: '100%', height: '100%' }}>
           <ReactFlow
             nodes={nodes}
             edges={edges}

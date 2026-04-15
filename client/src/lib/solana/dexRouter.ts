@@ -125,6 +125,16 @@ export async function routedSwap(params: RouterSwapParams): Promise<RouterSwapRe
 
   // ── Jupiter v6 (mainnet / fallback) ────────────────────────────────────────
   if (protocol === 'jupiter' || protocol === 'auto') {
+    if (cluster === 'devnet') {
+      if (protocol === 'jupiter') {
+         throw new Error('Jupiter Aggregator is only available on Mainnet-Beta. It does not exist on Devnet. Please use Raydium CPMM with a custom pool instead.');
+      }
+      // If protocol is 'auto' and devnet Raydium failed, we shouldn't fall back to Jupiter on devnet.
+      throw new Error(
+        'No swap route available. On devnet, you must deploy a custom Raydium pool first or provide a specific Orca pool address.'
+      );
+    }
+
     const { jupiterSwap } = await import('./jupiterSwap');
     const r = await jupiterSwap({
       inputMint: inputMintAddress,

@@ -15,14 +15,13 @@ import {
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
 
+import * as splToken from '@solana/spl-token';
+
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
-const SPL_TOKEN_PKG = '@solana/spl-token';
-
-/** Load spl-token and return a typed handle. All functions are cast to `any`. */
-async function spl() {
-  const m = await import(/* @vite-ignore */ SPL_TOKEN_PKG);
-  return m as any;
+/** Return the spl-token module. Kept as a function for backward compat with callers. */
+async function spl(): Promise<any> {
+  return splToken as any;
 }
 
 export interface TokenBalance {

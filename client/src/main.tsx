@@ -3,7 +3,7 @@ import App from "./App";
 import "./index.css";
 import { ThemeProvider } from "next-themes";
 
-// Polyfill Buffer for browser compatibility (needed for Marinade SDK)
+// Polyfill Buffer for browser compatibility (needed by Solana SDKs)
 import { Buffer } from 'buffer';
 (window as any).Buffer = Buffer;
 (globalThis as any).Buffer = Buffer;

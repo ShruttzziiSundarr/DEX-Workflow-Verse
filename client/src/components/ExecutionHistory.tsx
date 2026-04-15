@@ -92,7 +92,7 @@ export function ExecutionHistory() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 w-96">
-      <Card className="bg-dark-200 border border-dark-100 shadow-xl">
+      <Card className="border border-zinc-700 shadow-2xl" style={{ backgroundColor: '#1a1a2e', backdropFilter: 'none' }}>
         <div className="p-3 border-b border-dark-100 flex items-center justify-between">
           <h3 className="font-medium flex items-center gap-2">
             <span className="material-icons text-sm">history</span>
@@ -143,7 +143,7 @@ function ExecutionRecordCard({ record }: { record: ExecutionRecord }) {
   }[record.status];
 
   return (
-    <Card className="bg-dark-300 border border-dark-100 p-3">
+    <Card className="border border-zinc-700 p-3" style={{ backgroundColor: '#16213e' }}>
       <div
         className="flex items-center justify-between cursor-pointer"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -199,7 +199,7 @@ function ExecutionRecordCard({ record }: { record: ExecutionRecord }) {
                 </a>
               )}
               {action.details && (
-                <div className="ml-5 mt-1 p-2 bg-dark-200 rounded text-xs">
+                <div className="ml-5 mt-1 p-2 rounded text-xs" style={{ backgroundColor: '#0f3460' }}>
                   {Object.entries(action.details).map(([key, value]) => (
                     <div key={key} className="flex justify-between">
                       <span className="text-muted-foreground">{key}:</span>

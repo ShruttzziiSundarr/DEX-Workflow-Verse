@@ -66,6 +66,7 @@ export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
   } = params;
 
   const clusterParam = cluster || getCluster();
+  const connection = new Connection(clusterApiUrl(clusterParam), 'confirmed');
 
   console.debug('[jupiterSwap] request', {
     inputMint,
@@ -112,37 +113,33 @@ export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
       }
     }
 
-    // ── Mock path: standard devnet tokens (SOL, USDC, USDT, BONK) ────────────
-    console.log('[jupiterSwap] Using mock swap for devnet...');
-
-    // Get output decimals from token info if not provided
-    const outputToken = getDevnetTokenByAddress(outputMint);
-    const outDecimals = outputDecimals || outputToken?.decimals || 6;
-
-    try {
-      const result = await executeMockSwap({
-        inputMint,
-        outputMint,
-        uiAmount,
-        inputDecimals,
-        outputDecimals: outDecimals,
-        slippageBps,
-        userPublicKey,
-      });
-
-      return {
-        signature: result.signature,
-        inputMint: result.inputMint,
-        outputMint: result.outputMint,
-        inputAmount: result.inputAmount,
-        outputAmount: result.outputAmount,
-        mode: 'mock',
-        message: result.message,
-      };
-    } catch (error: any) {
-      console.error('[jupiterSwap] Mock swap failed:', error);
-      throw new Error(`Mock swap failed: ${error?.message || String(error)}`);
+    // ── STRICT ON-CHAIN ENFORCEMENT ───────────────────────────────────────────
+    if (!forceMock) {
+      throw new Error(
+        'No on-chain CPMM pool found for this pair. On Devnet, official router pools do not exist. ' +
+        'Please use the "Create Pool" action to deploy a custom pool first, or switch to Mainnet-Beta.'
+      );
     }
+
+    // ── forceMock path: simulate the swap with the mock service ──────────────
+    const mockResult = await executeMockSwap({
+      inputMint,
+      outputMint,
+      uiAmount,
+      inputDecimals,
+      outputDecimals: outputDecimals ?? 6,
+      slippageBps,
+      userPublicKey,
+    });
+    return {
+      signature: mockResult.signature,
+      inputMint,
+      outputMint,
+      inputAmount: uiAmount,
+      outputAmount: mockResult.outputAmount,
+      mode: 'mock',
+      message: mockResult.message,
+    };
   }
 
   // Mainnet: Use real Jupiter API
@@ -214,13 +211,13 @@ export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
     // provider.signTransaction may return a signed VersionedTransaction
     const signedTx = await provider.signTransaction(tx as any);
     const raw = signedTx.serialize(); // Uint8Array
-    sig = await solanaConnection.sendRawTransaction(raw as any, { skipPreflight: false, preflightCommitment: 'confirmed' });
+    sig = await connection.sendRawTransaction(raw as any, { skipPreflight: false, preflightCommitment: 'confirmed' });
   } else {
     throw new Error('Wallet does not support transaction signing');
   }
 
   console.debug('[jupiterSwap] sent transaction signature', sig);
-  await solanaConnection.confirmTransaction(sig, "confirmed");
+  await connection.confirmTransaction(sig, "confirmed");
 
   return {
     signature: sig,
@@ -235,8 +232,8 @@ export async function jupiterSwap(params: SwapParams): Promise<SwapResult> {
 // Common devnet mints (verified working tokens)
 export const DEVNET_MINTS = {
   WSOL: "So11111111111111111111111111111111111111112",
-  USDC: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // Verified USDC devnet
-  USDT: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", // Verified USDT devnet
+  USDC: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", // Devnet USDC
+  USDT: "EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS", // Devnet USDT
 };
 
 

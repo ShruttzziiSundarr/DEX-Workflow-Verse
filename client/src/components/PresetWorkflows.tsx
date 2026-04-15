@@ -26,108 +26,78 @@ const makeEdge = (id: string, source: string, target: string): Edge => ({
 
 export const PRESETS: Preset[] = [
   {
-    name: 'DeFi Starter',
-    description: 'Swap SOL → USDC, then add both tokens to the liquidity pool',
-    icon: 'rocket_launch',
-    color: '#3165F5',
-    tags: ['Swap', 'Liquidity'],
+    name: 'Devnet Pool Setup',
+    description: 'Required on Devnet: Mint custom tokens and deploy a Raydium pool before swapping',
+    icon: 'build',
+    color: '#F59E0B',
+    tags: ['Create Token', 'Liquidity'],
     nodes: [
       {
-        id: 'preset-swap-1',
+        id: 'preset-mint-1',
         type: 'workflowNode',
-        position: { x: 80, y: 180 },
+        position: { x: 50, y: 190 },
         data: {
-          type: 'swap',
-          label: 'Swap',
-          config: { sourceToken: 'SOL', targetToken: 'USDC', amount: '1', slippage: '1' },
+          type: 'tokenCreation',
+          label: 'Mint Token A',
+          config: { symbol: 'TKN-A', decimals: '6', initialSupply: '1000000' },
         },
       },
       {
-        id: 'preset-lp-1',
+        id: 'preset-mint-2',
         type: 'workflowNode',
-        position: { x: 340, y: 180 },
+        position: { x: 50, y: 300 },
         data: {
-          type: 'addLiquidity',
-          label: 'Add Liquidity',
-          config: { tokenA: 'SOL', tokenB: 'USDC', amountA: '1', amountB: '150', slippage: '1' },
+          type: 'tokenCreation',
+          label: 'Mint Token B',
+          config: { symbol: 'TKN-B', decimals: '6', initialSupply: '1000000' },
+        },
+      },
+      {
+        id: 'preset-cp-1',
+        type: 'workflowNode',
+        position: { x: 350, y: 240 },
+        data: {
+          type: 'liquidity',
+          label: 'Create Raydium Pool',
+          config: { protocol: 'raydium', action: 'createPool', amountA: '10000', amountB: '10000', slippage: '1' },
         },
       },
     ],
-    edges: [makeEdge('pe-1', 'preset-swap-1', 'preset-lp-1')],
+    edges: [
+      makeEdge('pe-c1', 'preset-mint-1', 'preset-cp-1'),
+      makeEdge('pe-c2', 'preset-mint-2', 'preset-cp-1'),
+    ],
   },
   {
-    name: 'Yield Maximizer',
-    description: 'Swap SOL → USDC, then stake remaining SOL for yield',
+    name: 'Mainnet Swap & Stake',
+    description: 'Standard Mainnet flow: Swap tokens and delegate to a validator for yield',
     icon: 'trending_up',
     color: '#10B981',
     tags: ['Swap', 'Stake'],
     nodes: [
       {
-        id: 'preset-swap-2',
+        id: 'preset-main-swap',
         type: 'workflowNode',
         position: { x: 80, y: 180 },
         data: {
           type: 'swap',
-          label: 'Swap',
-          config: { sourceToken: 'SOL', targetToken: 'USDC', amount: '0.5', slippage: '1' },
+          label: 'Swap (Mainnet)',
+          config: { protocol: 'jupiter', sourceToken: 'SOL', targetToken: 'USDC', amount: '0.5', slippage: '1' },
         },
       },
       {
-        id: 'preset-stake-2',
+        id: 'preset-main-stake',
         type: 'workflowNode',
         position: { x: 340, y: 180 },
         data: {
           type: 'stake',
           label: 'Stake',
-          config: { action: 'delegate', amount: '1', asset: 'SOL' },
+          config: { protocol: 'native', action: 'delegate', amount: '1', asset: 'SOL' },
         },
       },
     ],
-    edges: [makeEdge('pe-2', 'preset-swap-2', 'preset-stake-2')],
-  },
-  {
-    name: 'Full DeFi Loop',
-    description: 'Swap → Add Liquidity → Stake SOL in one automated workflow',
-    icon: 'loop',
-    color: '#7C3AED',
-    tags: ['Swap', 'Liquidity', 'Stake'],
-    nodes: [
-      {
-        id: 'preset-swap-3',
-        type: 'workflowNode',
-        position: { x: 60, y: 180 },
-        data: {
-          type: 'swap',
-          label: 'Swap',
-          config: { sourceToken: 'SOL', targetToken: 'USDC', amount: '1', slippage: '1' },
-        },
-      },
-      {
-        id: 'preset-lp-3',
-        type: 'workflowNode',
-        position: { x: 300, y: 180 },
-        data: {
-          type: 'addLiquidity',
-          label: 'Add Liquidity',
-          config: { tokenA: 'SOL', tokenB: 'USDC', amountA: '1', amountB: '150', slippage: '1' },
-        },
-      },
-      {
-        id: 'preset-stake-3',
-        type: 'workflowNode',
-        position: { x: 540, y: 180 },
-        data: {
-          type: 'stake',
-          label: 'Stake',
-          config: { action: 'delegate', amount: '2', asset: 'SOL' },
-        },
-      },
-    ],
-    edges: [
-      makeEdge('pe-3a', 'preset-swap-3', 'preset-lp-3'),
-      makeEdge('pe-3b', 'preset-lp-3', 'preset-stake-3'),
-    ],
-  },
+    edges: [makeEdge('pe-ms', 'preset-main-swap', 'preset-main-stake')],
+  }
 ];
 
 export function PresetWorkflows({ onLoad }: { onLoad?: () => void }) {
