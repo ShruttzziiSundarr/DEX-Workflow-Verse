@@ -48,6 +48,11 @@ const TRADITIONAL_TIMES: Record<string, { seconds: number; label: string; descri
     label: "7 min",
     description: "Set up payment channel, configure recipient, sign & broadcast payment",
   },
+  autoEarn: {
+    seconds: 1200,
+    label: "20 min",
+    description: "Manually swap, provide LP liquidity, and stake leftovers across multiple UIs and signatures",
+  },
 };
 
 function formatTime(seconds: number): string {
@@ -117,6 +122,7 @@ export function TimeComparisonPanel({
     claim: "Claim Rewards",
     bridge: "BTC Bridge",
     lightning: "SOL Transfer",
+    autoEarn: "Auto-Earn Vault",
   };
 
   return (

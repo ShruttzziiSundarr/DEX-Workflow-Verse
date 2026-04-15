@@ -150,6 +150,12 @@ type TokenCreationConfig = CommonConfig & {
   initialSupply: string;
 };
 
+type AutoEarnConfig = CommonConfig & {
+  asset: string;
+  amount: string;
+  riskProfile: 'conservative' | 'balanced' | 'aggressive';
+};
+
 export function ConfigPanel() {
   const selectedNode = (window as any).selectedWorkflowNode;
   const { updateNodeData } = useWorkflow();
@@ -244,6 +250,13 @@ export function ConfigPanel() {
     initialSupply: "1000000",
   });
 
+  const [autoEarnConfig, setAutoEarnConfig] = useState<AutoEarnConfig>({
+    moduleName: "Auto-Earn Vault",
+    asset: "SOL",
+    amount: "1.0",
+    riskProfile: "balanced",
+  });
+
   // Dynamic preview state for Claim Rewards
   const [claimPreview, setClaimPreview] = useState<{summary: string, usd: number} | null>(null);
 
@@ -305,6 +318,13 @@ export function ConfigPanel() {
           setClaimConfig(prev => ({
             ...prev,
             moduleName: currentData.label || "Claim Rewards",
+            ...currentData.config
+          }));
+          break;
+        case "autoEarn":
+          setAutoEarnConfig(prev => ({
+            ...prev,
+            moduleName: currentData.label || "Auto-Earn Vault",
             ...currentData.config
           }));
           break;
@@ -397,6 +417,13 @@ export function ConfigPanel() {
           config: { ...claimConfig }
         };
         break;
+      case "autoEarn":
+        newData = {
+          ...newData,
+          label: autoEarnConfig.moduleName,
+          config: { ...autoEarnConfig }
+        };
+        break;
       case "bridge":
         newData = {
           ...newData,
@@ -482,6 +509,14 @@ export function ConfigPanel() {
           fromPool: "Yield Farm",
           token: "YIELD",
           autoReinvest: false,
+        });
+        break;
+      case "autoEarn":
+        setAutoEarnConfig({
+          moduleName: "Auto-Earn Vault",
+          asset: "SOL",
+          amount: "1.0",
+          riskProfile: "balanced",
         });
         break;
       case "bridge":
@@ -988,6 +1023,90 @@ export function ConfigPanel() {
                   {claimPreview ? `$${claimPreview.usd.toFixed(2)}` : '$0.00'}
                 </span>
               </div>
+            </Card>
+          </div>
+        </div>
+      );
+      break;
+
+    case "autoEarn":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full bg-teal-500 bg-opacity-20 flex items-center justify-center">
+              <span className="material-icons text-teal-400">auto_awesome</span>
+            </div>
+            <h3 className="text-base font-medium">Auto-Earn Vault Configuration</h3>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input
+                value={autoEarnConfig.moduleName}
+                onChange={(e) => setAutoEarnConfig({ ...autoEarnConfig, moduleName: e.target.value })}
+                className="mt-1 bg-background border-border"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Asset</Label>
+              <Select
+                value={autoEarnConfig.asset}
+                onValueChange={(value) => setAutoEarnConfig({ ...autoEarnConfig, asset: value })}
+              >
+                <SelectTrigger className="mt-1 bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SOL">SOL</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Amount</Label>
+              <Input
+                type="number"
+                step="0.1"
+                value={autoEarnConfig.amount}
+                onChange={(e) => setAutoEarnConfig({ ...autoEarnConfig, amount: e.target.value })}
+                className="mt-1 bg-background border-border"
+                placeholder="1.0"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Risk Profile</Label>
+              <Select
+                value={autoEarnConfig.riskProfile}
+                onValueChange={(value: 'conservative' | 'balanced' | 'aggressive') =>
+                  setAutoEarnConfig({ ...autoEarnConfig, riskProfile: value })
+                }
+              >
+                <SelectTrigger className="mt-1 bg-background border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="conservative">Conservative</SelectItem>
+                  <SelectItem value="balanced">Balanced</SelectItem>
+                  <SelectItem value="aggressive">Aggressive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Card className="bg-muted p-3 text-xs space-y-2 border border-teal-400/20">
+              <div className="font-medium text-teal-300 flex items-center gap-1">
+                <span className="material-icons text-sm">info</span>
+                Under the Hood (Read-only)
+              </div>
+              <p className="text-muted-foreground leading-relaxed">
+                1) Swap a strategy portion to USDC, 2) add liquidity in a Raydium CPMM LP position,
+                3) stake leftover SOL to a native validator on Devnet.
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Every step requests Phantom approval and writes execution receipts to history for tx verification.
+              </p>
             </Card>
           </div>
         </div>

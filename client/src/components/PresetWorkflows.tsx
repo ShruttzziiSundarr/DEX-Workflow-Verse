@@ -97,7 +97,195 @@ export const PRESETS: Preset[] = [
       },
     ],
     edges: [makeEdge('pe-ms', 'preset-main-swap', 'preset-main-stake')],
-  }
+  },
+  {
+    name: 'Auto-Earn Vault (Balanced)',
+    description: 'One-click vault strategy that orchestrates swap, LP provisioning, and staking in a single intent node',
+    icon: 'auto_awesome',
+    color: '#14B8A6',
+    tags: ['Auto-Earn', 'Liquidity', 'Stake'],
+    nodes: [
+      {
+        id: 'preset-ae-1',
+        type: 'workflowNode',
+        position: { x: 180, y: 220 },
+        data: {
+          type: 'autoEarn',
+          label: 'Auto-Earn Vault',
+          config: {
+            moduleName: 'Balanced Auto-Earn Vault',
+            asset: 'SOL',
+            amount: '2.0',
+            riskProfile: 'balanced',
+          },
+        },
+      },
+      {
+        id: 'preset-ae-2',
+        type: 'workflowNode',
+        position: { x: 470, y: 220 },
+        data: {
+          type: 'claim',
+          label: 'Claim LP Yield',
+          config: {
+            moduleName: 'Claim Rewards',
+            fromPool: 'Liquidity Pool',
+            token: 'LP-TOKEN',
+            autoReinvest: true,
+          },
+        },
+      },
+    ],
+    edges: [makeEdge('pe-ae-1', 'preset-ae-1', 'preset-ae-2')],
+  },
+  {
+    name: 'Treasury Growth Loop',
+    description: 'Structured treasury workflow: rebalance exposure, deploy liquidity, and harvest rewards',
+    icon: 'account_balance',
+    color: '#7C3AED',
+    tags: ['Swap', 'Liquidity', 'Claim'],
+    nodes: [
+      {
+        id: 'preset-tg-1',
+        type: 'workflowNode',
+        position: { x: 40, y: 200 },
+        data: {
+          type: 'swap',
+          label: 'Rebalance SOL → USDC',
+          config: {
+            protocol: 'raydium',
+            sourceToken: 'SOL',
+            targetToken: 'USDC',
+            amount: '1.5',
+            slippage: '1',
+          },
+        },
+      },
+      {
+        id: 'preset-tg-2',
+        type: 'workflowNode',
+        position: { x: 320, y: 200 },
+        data: {
+          type: 'liquidity',
+          label: 'Add SOL/USDC Liquidity',
+          config: {
+            protocol: 'raydium',
+            action: 'addLiquidity',
+            tokenA: 'SOL',
+            tokenB: 'USDC',
+            amountA: '1.0',
+            amountB: '150.0',
+            slippage: '1',
+          },
+        },
+      },
+      {
+        id: 'preset-tg-3',
+        type: 'workflowNode',
+        position: { x: 600, y: 200 },
+        data: {
+          type: 'claim',
+          label: 'Harvest Yield',
+          config: {
+            moduleName: 'Claim Rewards',
+            fromPool: 'Yield Farm',
+            token: 'YIELD',
+            autoReinvest: false,
+          },
+        },
+      },
+    ],
+    edges: [
+      makeEdge('pe-tg-1', 'preset-tg-1', 'preset-tg-2'),
+      makeEdge('pe-tg-2', 'preset-tg-2', 'preset-tg-3'),
+    ],
+  },
+  {
+    name: 'Liquidity + Validator Mix',
+    description: 'Split strategy with liquidity deployment followed by native SOL staking for balanced exposure',
+    icon: 'tune',
+    color: '#06B6D4',
+    tags: ['Liquidity', 'Stake'],
+    nodes: [
+      {
+        id: 'preset-ls-1',
+        type: 'workflowNode',
+        position: { x: 90, y: 210 },
+        data: {
+          type: 'liquidity',
+          label: 'Deploy Liquidity',
+          config: {
+            protocol: 'raydium',
+            action: 'addLiquidity',
+            tokenA: 'SOL',
+            tokenB: 'USDT',
+            amountA: '0.8',
+            amountB: '120.0',
+            slippage: '1',
+          },
+        },
+      },
+      {
+        id: 'preset-ls-2',
+        type: 'workflowNode',
+        position: { x: 380, y: 210 },
+        data: {
+          type: 'stake',
+          label: 'Delegate Remaining SOL',
+          config: {
+            moduleName: 'Stake SOL',
+            protocol: 'native',
+            action: 'delegate',
+            asset: 'SOL',
+            amount: '1.2',
+            autoCompound: true,
+          },
+        },
+      },
+    ],
+    edges: [makeEdge('pe-ls-1', 'preset-ls-1', 'preset-ls-2')],
+  },
+  {
+    name: 'Instant Payment + Re-entry',
+    description: 'Send fast settlement transfer and immediately rotate remaining capital into a new position',
+    icon: 'bolt',
+    color: '#F59E0B',
+    tags: ['Lightning', 'Swap'],
+    nodes: [
+      {
+        id: 'preset-ip-1',
+        type: 'workflowNode',
+        position: { x: 70, y: 205 },
+        data: {
+          type: 'lightning',
+          label: 'Instant SOL Transfer',
+          config: {
+            moduleName: 'Lightning Payment',
+            recipient: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+            amount: '0.05',
+            memo: 'Supplier settlement',
+          },
+        },
+      },
+      {
+        id: 'preset-ip-2',
+        type: 'workflowNode',
+        position: { x: 350, y: 205 },
+        data: {
+          type: 'swap',
+          label: 'Re-enter via Swap',
+          config: {
+            protocol: 'raydium',
+            sourceToken: 'SOL',
+            targetToken: 'USDC',
+            amount: '0.7',
+            slippage: '1',
+          },
+        },
+      },
+    ],
+    edges: [makeEdge('pe-ip-1', 'preset-ip-1', 'preset-ip-2')],
+  },
 ];
 
 export function PresetWorkflows({ onLoad }: { onLoad?: () => void }) {

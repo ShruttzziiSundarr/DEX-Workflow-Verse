@@ -23,6 +23,8 @@ const getNodeStyles = (type: ModuleType) => {
       return { backgroundColor: "rgba(16, 185, 129, 0.2)", borderLeft: "4px solid #10B981", icon: "lock", iconColor: "#10B981" };
     case "claim":
       return { backgroundColor: "rgba(124, 58, 237, 0.2)", borderLeft: "4px solid #7C3AED", icon: "redeem", iconColor: "#7C3AED" };
+    case "autoEarn":
+      return { backgroundColor: "rgba(20, 184, 166, 0.2)", borderLeft: "4px solid #14B8A6", icon: "auto_awesome", iconColor: "#14B8A6" };
     case "bridge":
       return { backgroundColor: "rgba(245, 158, 11, 0.2)", borderLeft: "4px solid #F59E0B", icon: "bridge", iconColor: "#F59E0B" };
     case "lightning":
@@ -125,6 +127,23 @@ const getNodeContent = (type: ModuleType, config: any) => {
           <div className="flex justify-between items-center">
             <span>Token:</span>
             <span className="font-mono">{config?.token || "YIELD"}</span>
+          </div>
+        </>
+      );
+    case "autoEarn":
+      return (
+        <>
+          <div className="flex justify-between items-center mb-1">
+            <span>Asset:</span>
+            <span className="font-mono">{config?.asset || "SOL"}</span>
+          </div>
+          <div className="flex justify-between items-center mb-1">
+            <span>Amount:</span>
+            <span className="font-mono">{config?.amount || "1.0"}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>Risk:</span>
+            <span className="font-mono capitalize">{config?.riskProfile || "balanced"}</span>
           </div>
         </>
       );

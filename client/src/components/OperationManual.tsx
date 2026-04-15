@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Operation data — 11 on-chain + 6 simulated
+   Operation data — on-chain + simulated modules
    ═══════════════════════════════════════════════════════════════════════════ */
 
 interface OperationDoc {
@@ -51,6 +51,46 @@ interface OperationDoc {
 }
 
 const OPERATIONS: OperationDoc[] = [
+  {
+    type: 'autoEarn',
+    title: 'Auto-Earn Vault (1-Click)',
+    shortTitle: 'Auto-Earn Vault',
+    icon: <Layers className="h-4 w-4" />,
+    category: 'Automation',
+    onChain: true,
+    platform: 'DEX WorkflowVerse',
+    platformUrl: 'Builder → Auto-Earn Vault',
+    whenToUse:
+      'Use this when you want an intent-based strategy that bundles rebalancing, liquidity deployment, and staking into one execution path with verifiable receipts.',
+    prerequisites: [
+      'Phantom wallet connected to Solana Devnet',
+      'Sufficient SOL balance for strategy amount and fees',
+      'Risk profile selected (conservative / balanced / aggressive)',
+    ],
+    manualSteps: [
+      'Swap part of SOL into a stable asset manually',
+      'Open liquidity interface and add the pair into an LP pool',
+      'Stake remaining SOL in a validator interface',
+      'Track each transaction separately across multiple pages',
+    ],
+    workflowVerseSteps: [
+      'Drag "Auto-Earn Vault" onto canvas',
+      'Set asset, amount, and risk profile',
+      'Execute once and approve sequential wallet prompts',
+      'Review grouped execution history with per-step tx entries',
+    ],
+    example: {
+      scenario: 'Deploy a balanced strategy using 2 SOL through a single Auto-Earn node.',
+      parameters: { Asset: 'SOL', Amount: '2.0', 'Risk Profile': 'Balanced', Sequence: 'Swap → Add Liquidity → Stake' },
+    },
+    tips: [
+      'On Devnet, swap runs real-first and falls back when route liquidity is unavailable',
+      'Claim Rewards can be attached downstream to harvest LP fee yield',
+    ],
+    timeTraditional: '20–35 min',
+    timeWorkflowVerse: '~6 min',
+    description: 'One-click strategy orchestration across swap, LP provisioning, and staking.',
+  },
   /* ── On-chain: Trading ──────────────────────────────────────────────── */
   {
     type: 'createPool',
@@ -527,16 +567,16 @@ const OPERATIONS: OperationDoc[] = [
     description: 'Cross-chain BTC → Solana bridge (simulated/mock).',
   },
   {
-    type: 'claimRewards',
-    title: 'Claim Rewards (Mock)',
+    type: 'claim',
+    title: 'Claim Rewards',
     shortTitle: 'Claim Rewards',
     icon: <Gift className="h-4 w-4" />,
     category: 'Rewards',
-    onChain: false,
+    onChain: true,
     platform: 'raydium.io / orca.so / marinade.finance',
     platformUrl: 'Multiple platforms',
     whenToUse:
-      'Harvest accumulated LP fees and staking rewards across all your DeFi positions. Traditionally requires visiting each platform separately. ⚠️ Simulated in WorkflowVerse.',
+      'Harvest accumulated LP fee yield and staking rewards across positions. This operation executes on-chain claims when claimable positions are available.',
     prerequisites: [
       'Active positions with pending rewards',
       'SOL for claim tx fees',
@@ -550,7 +590,7 @@ const OPERATIONS: OperationDoc[] = [
     workflowVerseSteps: [
       'Drag "Claim Rewards" onto canvas',
       'Select pools/positions to claim from',
-      'Execute — all claims batched (simulated)',
+      'Execute — claim transactions are batched in one workflow run',
     ],
     example: {
       scenario: 'Claim all rewards across Raydium, Orca, and Marinade in one operation.',
@@ -562,37 +602,37 @@ const OPERATIONS: OperationDoc[] = [
     ],
     timeTraditional: '15–25 min',
     timeWorkflowVerse: '~5 min',
-    description: 'Harvest rewards from multiple DeFi platforms (simulated).',
+    description: 'Harvest rewards from DeFi positions using on-chain claim transactions.',
   },
   {
     type: 'lightning',
-    title: 'Lightning Payment (Mock)',
+    title: 'Instant SOL Transfer',
     shortTitle: 'Lightning Pay',
     icon: <Zap className="h-4 w-4" />,
     category: 'Transfer',
-    onChain: false,
-    platform: 'Muun / Phoenix / Strike',
-    platformUrl: 'Lightning Network wallets',
+    onChain: true,
+    platform: 'Solana System Program',
+    platformUrl: 'Phantom transfer signing',
     whenToUse:
-      'For Bitcoin Lightning Network payments — instant, low-fee BTC transfers. ⚠️ Simulated in WorkflowVerse.',
+      'For near-instant wallet-to-wallet SOL payments on Solana Devnet using a direct signed transfer transaction.',
     prerequisites: [
       'Lightning wallet app (Muun/Phoenix/Strike)',
       'BOLT11 invoice or recipient info',
     ],
     manualSteps: [
-      'Open LN wallet → create or scan BOLT11 invoice',
-      'Enter amount in sats',
-      'Review routing fees → confirm',
-      'Wait for settlement → save proof',
+      'Open wallet transfer flow and paste recipient',
+      'Enter SOL amount and memo',
+      'Sign transfer transaction',
+      'Verify confirmation and tx signature',
     ],
     workflowVerseSteps: [
-      'Drag "Lightning Payment" onto canvas',
-      'Configure invoice and amount',
-      'Execute — simulated LN payment flow',
+      'Drag "Lightning" module onto canvas',
+      'Enter recipient address and SOL amount',
+      'Execute and sign the transfer prompt',
     ],
     example: {
-      scenario: 'Send 10,000 sats via Lightning Network (simulated).',
-      parameters: { 'Amount': '10,000 sats', 'Routing Fee': '~1 sat', 'Network': 'Lightning (L2)' },
+      scenario: 'Send 0.05 SOL to a teammate wallet for settlement.',
+      parameters: { Amount: '0.05 SOL', 'Network Fee': '~0.000005 SOL', Finality: '~400ms' },
     },
     tips: [
       'Lightning payments are near-instant and cost fractions of a cent',
@@ -600,7 +640,7 @@ const OPERATIONS: OperationDoc[] = [
     ],
     timeTraditional: '5–10 min',
     timeWorkflowVerse: '~3 min',
-    description: 'Bitcoin Lightning Network payment (simulated/mock).',
+    description: 'Real on-chain SOL transfer with instant Solana finality.',
   },
   {
     type: 'smartContract',
@@ -720,14 +760,16 @@ const OPERATIONS: OperationDoc[] = [
    Categories & styling
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const CATEGORIES = ['Trading', 'Liquidity', 'Staking', 'Rewards', 'Transfer', 'Cross-Chain', 'Advanced'];
+const CATEGORIES = ['Automation', 'Trading', 'Liquidity', 'Staking', 'Rewards', 'Transfer', 'Cross-Chain', 'Advanced'];
 
 const CAT_DOT: Record<string, string> = {
+  Automation: 'bg-teal-400',
   Trading: 'bg-blue-400', Liquidity: 'bg-purple-400', Staking: 'bg-green-400',
   Rewards: 'bg-amber-400', Transfer: 'bg-cyan-400', 'Cross-Chain': 'bg-orange-400', Advanced: 'bg-pink-400',
 };
 
 const CAT_BADGE: Record<string, string> = {
+  Automation: 'bg-teal-500/15 text-teal-400 border-teal-500/30',
   Trading: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   Liquidity: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
   Staking: 'bg-green-500/15 text-green-400 border-green-500/30',

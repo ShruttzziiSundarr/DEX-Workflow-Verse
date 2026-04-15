@@ -224,7 +224,7 @@ function ExecutionRecordCard({ record }: { record: ExecutionRecord }) {
               {(() => {
                 const TRAD: Record<string, number> = {
                   swap: 180, jupiterSwap: 180, addLiquidity: 600, removeLiquidity: 480,
-                  liquidityPool: 540, stake: 900, claim: 300, bridge: 2700, lightning: 420,
+                  liquidityPool: 540, stake: 900, claim: 300, autoEarn: 1200, bridge: 2700, lightning: 420,
                 };
                 const tradTotal = record.actions.reduce(
                   (sum, a) => sum + (TRAD[a.type] ?? 120), 0

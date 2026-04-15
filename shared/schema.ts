@@ -112,6 +112,7 @@ export const ModuleTypeEnum = z.enum([
   "liquidity",
   "stake",
   "claim",
+  "autoEarn",
   "transfer",
   "bridge",
   "tokenCreation",

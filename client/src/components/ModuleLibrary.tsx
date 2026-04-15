@@ -70,6 +70,18 @@ const MODULES: ModuleInfo[] = [
     example: "Claim accumulated LP fee rewards from all pools you have positions in.",
     useCase: "Compounding yield: Add Liquidity → wait → Claim Rewards → Swap → Stake.",
   },
+  {
+    type: "autoEarn",
+    title: "Auto-Earn Vault",
+    description: "1-click Swap → LP → Stake automation",
+    icon: "auto_awesome",
+    color: "#14B8A6",
+    bgColor: "rgba(20, 184, 166, 0.2)",
+    status: "full",
+    badge: "Hybrid",
+    example: "Deposit SOL once and let the engine automatically split it into swap, liquidity provisioning, and staking transactions.",
+    useCase: "Best for standard users who want managed DeFi yield setup without manually configuring each module.",
+  },
 
   // ─── Utility ───────────────────────────────────────────────────────
   {
@@ -119,7 +131,7 @@ const CATEGORIES = [
   {
     name: "Liquidity & Yield",
     icon: "account_balance",
-    modules: ["liquidity", "stake", "claim"],
+    modules: ["liquidity", "stake", "claim", "autoEarn"],
   },
   {
     name: "Utility",

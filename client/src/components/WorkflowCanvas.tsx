@@ -58,6 +58,12 @@ const TOKEN_DECIMALS: Record<string, number> = {
   ORCA: 6,
 };
 
+const AUTO_EARN_ALLOCATIONS: Record<'conservative' | 'balanced' | 'aggressive', { swapPct: number; stakePct: number }> = {
+  conservative: { swapPct: 0.45, stakePct: 0.30 },
+  balanced: { swapPct: 0.50, stakePct: 0.20 },
+  aggressive: { swapPct: 0.55, stakePct: 0.10 },
+};
+
 function resolveTokenMint(symbolOrAddress: string, cluster: 'devnet' | 'mainnet-beta' = 'devnet') {
   const normalized = symbolOrAddress?.trim().toUpperCase();
   if (!normalized || normalized.length === 0) return '';
@@ -290,6 +296,132 @@ export function WorkflowCanvas() {
       }
 
       const userPublicKey = provider.publicKey.toString();
+
+      // Auto-Earn Vault: orchestrates Swap -> LP -> Stake as a single intent node
+      const autoEarnNodes = nodes.filter(n => n.data?.type === 'autoEarn');
+      for (const autoNode of autoEarnNodes) {
+        const cfg = (autoNode.data?.config || {}) as any;
+        const asset = (cfg.asset || 'SOL').toUpperCase();
+        const amount = parseFloat(cfg.amount || '1.0');
+        const riskProfile = (cfg.riskProfile || 'balanced') as 'conservative' | 'balanced' | 'aggressive';
+
+        if (asset !== 'SOL') {
+          toast({ title: 'Auto-Earn only supports SOL', description: 'Set asset to SOL in the Auto-Earn config.', variant: 'destructive' });
+          setNodeExecStatus(autoNode.id, 'failed');
+          return;
+        }
+        if (Number.isNaN(amount) || amount <= 0) {
+          toast({ title: 'Invalid Auto-Earn amount', description: 'Please set a valid amount greater than 0.', variant: 'destructive' });
+          setNodeExecStatus(autoNode.id, 'failed');
+          return;
+        }
+
+        const allocation = AUTO_EARN_ALLOCATIONS[riskProfile] ?? AUTO_EARN_ALLOCATIONS.balanced;
+        const swapAmount = Number((amount * allocation.swapPct).toFixed(6));
+        const stakeAmount = Number((amount * allocation.stakePct).toFixed(6));
+        const lpAssetAmount = Number(Math.max(0, amount - swapAmount - stakeAmount).toFixed(6));
+
+        if (lpAssetAmount <= 0) {
+          toast({ title: 'Auto-Earn allocation error', description: 'Unable to allocate enough balance for LP provisioning.', variant: 'destructive' });
+          setNodeExecStatus(autoNode.id, 'failed');
+          return;
+        }
+
+        try {
+          setNodeExecStatus(autoNode.id, 'running');
+          toast({ title: 'Auto-Earn Started', description: `Executing Swap → LP → Stake for ${amount} ${asset} (${riskProfile})` });
+
+          // Step 1: Swap portion to USDC (real-first on devnet; fallback to mock only if no route)
+          let swapResult: any;
+          try {
+            swapResult = await jupiterSwap({
+              inputMint: DEVNET_TOKEN_MINTS.SOL,
+              outputMint: DEVNET_TOKEN_MINTS.USDC,
+              uiAmount: swapAmount,
+              inputDecimals: TOKEN_DECIMALS.SOL,
+              outputDecimals: TOKEN_DECIMALS.USDC,
+              slippageBps: 100,
+              userPublicKey,
+              destinationWallet: userPublicKey,
+              cluster: 'devnet',
+            });
+          } catch (swapErr: any) {
+            console.warn('[Auto-Earn] Real devnet swap route unavailable, using mock fallback:', swapErr?.message);
+            swapResult = await jupiterSwap({
+              inputMint: DEVNET_TOKEN_MINTS.SOL,
+              outputMint: DEVNET_TOKEN_MINTS.USDC,
+              uiAmount: swapAmount,
+              inputDecimals: TOKEN_DECIMALS.SOL,
+              outputDecimals: TOKEN_DECIMALS.USDC,
+              slippageBps: 100,
+              userPublicKey,
+              destinationWallet: userPublicKey,
+              cluster: 'devnet',
+              forceMock: true,
+            });
+            swapResult.message = `[Auto-Earn fallback] ${swapResult.message}`;
+          }
+
+          executionActions.push({
+            type: 'swap',
+            status: 'success',
+            message: `[Auto-Earn] Swapped ${swapAmount} SOL to USDC`,
+            signature: swapResult.signature,
+            details: { module: 'autoEarn', step: 'swap', riskProfile, mode: swapResult.mode, outputAmount: swapResult.outputAmount?.toFixed(4) },
+          });
+
+          // Step 2: Add liquidity on Raydium-style LP path
+          const { handleLiquidityPool } = await import('../lib/solana/liquidityPool');
+          const usdcForLp = Number(((swapResult.outputAmount as number) || (swapAmount * 150)).toFixed(6));
+          const lpResult = await handleLiquidityPool({
+            action: 'addLiquidity',
+            tokenA: 'SOL',
+            tokenB: 'USDC',
+            amountA: lpAssetAmount,
+            amountB: usdcForLp,
+            slippage: 1,
+            poolAddress: '',
+            fromPubkey: new PublicKey(userPublicKey),
+          });
+
+          executionActions.push({
+            type: 'addLiquidity',
+            status: 'success',
+            message: `[Auto-Earn] Added liquidity with ${lpAssetAmount} SOL + ${usdcForLp} USDC`,
+            signature: lpResult.signature,
+            details: { module: 'autoEarn', step: 'addLiquidity', mode: lpResult.mode, poolAddress: lpResult.poolAddress, lpTokensReceived: lpResult.lpTokensReceived },
+          });
+
+          // Step 3: Stake remaining SOL
+          const { handleMarinadeStake } = await import('../lib/solana/marinadeStaking');
+          const stakeSignature = await handleMarinadeStake({
+            action: 'stake',
+            amount: stakeAmount,
+            fromPubkey: new PublicKey(userPublicKey),
+          });
+
+          executionActions.push({
+            type: 'stake',
+            status: 'success',
+            message: `[Auto-Earn] Staked leftover ${stakeAmount} SOL`,
+            signature: stakeSignature,
+            details: { module: 'autoEarn', step: 'stake', riskProfile },
+          });
+
+          setNodeExecStatus(autoNode.id, 'success');
+          toast({ title: 'Auto-Earn Completed ✓', description: 'Swap, LP provisioning, and staking were executed.' });
+        } catch (autoErr: any) {
+          console.error('Auto-Earn execution error:', autoErr);
+          executionActions.push({
+            type: 'autoEarn',
+            status: 'failed',
+            message: autoErr.message || 'Auto-Earn execution failed',
+          });
+          setNodeExecStatus(autoNode.id, 'failed');
+          toast({ title: 'Auto-Earn Failed', description: autoErr.message || 'Unknown Auto-Earn error', variant: 'destructive' });
+          return;
+        }
+      }
 
       // Find and execute Swap if present (supports both 'swap' and 'jupiterSwap' types)
       const swapNode = nodes.find(n => n.data?.type === 'swap' || n.data?.type === 'jupiterSwap');
@@ -778,10 +910,10 @@ export function WorkflowCanvas() {
       }
 
       // If no executable nodes found
-      const hasExecutableNode = swapNode || liquidityNode || stakeNode || lightningNode || claimNode
+      const hasExecutableNode = autoEarnNodes.length || swapNode || liquidityNode || stakeNode || lightningNode || claimNode
         || orcaSwapNodes.length || raydiumSwapNodes.length || tokenCreationNodes.length;
       if (!hasExecutableNode) {
-        toast({ title: 'No Executable Actions', description: 'Add Swap, Liquidity, Stake, Claim Rewards, Lightning, Orca Swap, Raydium Swap, or Create Token modules to execute.', variant: 'destructive' });
+        toast({ title: 'No Executable Actions', description: 'Add Auto-Earn, Swap, Liquidity, Stake, Claim Rewards, Lightning, Orca Swap, Raydium Swap, or Create Token modules to execute.', variant: 'destructive' });
         return;
       }
 
@@ -888,6 +1020,7 @@ export function WorkflowCanvas() {
                 case 'addLiquidity': return '#06B6D4';
                 case 'stake': return '#10B981';
                 case 'claim': return '#7C3AED';
+                case 'autoEarn': return '#14B8A6';
                 case 'bridge': return '#F59E0B';
                 case 'lightning': return '#F59E0B';
                 case 'orcaSwap': return '#06D6A0';
@@ -977,6 +1110,7 @@ function getModuleLabel(type: ModuleType): string {
     case 'addLiquidity': return 'Add Liquidity';
     case 'stake': return 'Stake';
     case 'claim': return 'Claim Rewards';
+    case 'autoEarn': return 'Auto-Earn Vault';
     case 'bridge': return 'BTC Bridge';
     case 'lightning': return 'Lightning';
     case 'orcaSwap': return 'Orca Swap';
