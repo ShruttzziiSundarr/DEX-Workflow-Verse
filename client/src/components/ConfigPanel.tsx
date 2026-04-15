@@ -244,6 +244,40 @@ export function ConfigPanel() {
     initialSupply: "1000000",
   });
 
+  // Dynamic preview state for Claim Rewards
+  const [claimPreview, setClaimPreview] = useState<{summary: string, usd: number} | null>(null);
+
+  // Fetch real LP claim previews dynamically
+  useEffect(() => {
+    if (selectedNode?.data?.type === 'claim') {
+      const getPreview = async () => {
+        try {
+          const provider: any = (window as any)?.solana;
+          if (provider?.publicKey) {
+            const { previewClaimableRewards } = await import('@/lib/solana/claimRewards');
+            const preview = previewClaimableRewards(provider.publicKey.toString());
+            
+            if (preview.results.length > 0) {
+              const summary = preview.results
+                .map(r => `${r.rewardA.toFixed(2)} ${r.tokenA} + ${r.rewardB.toFixed(2)} ${r.tokenB}`)
+                .join(', ');
+                
+              setClaimPreview({ summary, usd: preview.totalRewardUSD });
+            } else {
+              setClaimPreview({ summary: '0.00 YIELD', usd: 0 });
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch claim preview", e);
+        }
+      };
+      getPreview();
+      // Auto-refresh dynamic values every 3 seconds for demo purposes
+      const interval = setInterval(getPreview, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [selectedNode]);
+
   // Update form based on selected node
   useEffect(() => {
     if (selectedNode) {
@@ -941,14 +975,18 @@ export function ConfigPanel() {
               <Label htmlFor="autoReinvest">Auto-reinvest rewards</Label>
             </div>
             
-            <Card className="bg-muted p-3 text-xs">
+            <Card className="bg-muted p-3 text-xs border border-[rgba(124,58,237,0.2)]">
               <div className="flex justify-between mb-1">
                 <span className="text-muted-foreground">Est. Claimable:</span>
-                <span>250 YIELD</span>
+                <span className="font-mono text-[hsl(var(--primary))] font-medium text-right max-w-[200px] break-words">
+                  {claimPreview ? claimPreview.summary : '0.00 YIELD'}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Value:</span>
-                <span>~0.025 BTC</span>
+                <span className="text-muted-foreground">USD Value:</span>
+                <span className="font-mono text-green-400 font-medium">
+                  {claimPreview ? `$${claimPreview.usd.toFixed(2)}` : '$0.00'}
+                </span>
               </div>
             </Card>
           </div>

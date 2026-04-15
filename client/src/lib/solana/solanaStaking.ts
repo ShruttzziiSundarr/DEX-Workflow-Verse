@@ -155,7 +155,8 @@ export async function createStakeAccountAddress(
 
 /**
  * Unified Solana staking function
- * Handles delegate, deactivate, and withdraw operations
+ * Identifies if Helius API key is available, utilizing Helius SDK for automated staking.
+ * Falls back to Native Staking (manual serialization) if no key is provided.
  */
 export async function handleSolanaStake(params: StakeParams): Promise<string> {
   const { action, amount, validatorPubkey, stakeAccountPubkey, fromPubkey } = params;
@@ -164,9 +165,112 @@ export async function handleSolanaStake(params: StakeParams): Promise<string> {
     throw new Error('Wallet not connected');
   }
 
-  // Validate wallet has some balance for fees upfront
+  // Get Phantom provider
+  const provider: any = (window as any)?.solana;
+  if (!provider?.isPhantom) {
+    throw new Error('Phantom wallet not available');
+  }
+
+  // Validate wallet connection before proceeding
+  const isConnected = await provider.connect({ onlyIfTrusted: true }).catch(() => false);
+  if (!isConnected) {
+    throw new Error('Wallet not connected. Please connect your wallet and try again.');
+  }
+
+  // Check for Helius environment variable
+  const heliusApiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_HELIUS_API_KEY) || '';
+
+  if (heliusApiKey && heliusApiKey !== 'YOUR_API_KEY') {
+    // ═══════════════════════════════════════════════════════════════════════════════
+    // HELIUS SDK STAKING (Based on provided documentation)
+    // ═══════════════════════════════════════════════════════════════════════════════
+    try {
+      console.log('[Helius] Using Helius SDK for automated staking');
+      
+      // Dynamically import to prevent breaking if not installed yet
+      const { Helius } = await import('helius-sdk');
+      const bs58 = (await import('bs58')).default;
+      
+      const helius = new Helius(heliusApiKey, 'devnet');
+
+      if (action === 'delegate') {
+        if (!amount) throw new Error('Amount is required for delegate');
+
+        console.log(`[Helius] Creating staking tx for ${amount} SOL...`);
+        const { serializedTx, stakeAccountPubkey: newStakeAccount } = 
+          await helius.rpc.createStakeTransaction(fromPubkey.toBase58(), amount);
+
+        const tx = Transaction.from(bs58.decode(serializedTx));
+        tx.feePayer = fromPubkey;
+        const { blockhash } = await solanaConnection.getLatestBlockhash();
+        tx.recentBlockhash = blockhash;
+
+        console.log('[Helius] Requesting Phantom signature...');
+        const txResult = await provider.signAndSendTransaction(tx);
+        const signature = typeof txResult === 'string' ? txResult : (txResult?.signature || txResult?.txid);
+
+        await solanaConnection.confirmTransaction(signature, 'confirmed');
+        console.log(`[Helius] Successfully staked! Account: ${newStakeAccount}`);
+        return signature;
+
+      } else if (action === 'deactivate') {
+        if (!stakeAccountPubkey) throw new Error('Stake account required for deactivate');
+        
+        console.log(`[Helius] Unstaking account ${stakeAccountPubkey}...`);
+        const serializedTx = await helius.rpc.createUnstakeTransaction(
+          fromPubkey.toBase58(),
+          stakeAccountPubkey
+        );
+
+        const tx = Transaction.from(bs58.decode(serializedTx));
+        tx.feePayer = fromPubkey;
+        const { blockhash } = await solanaConnection.getLatestBlockhash();
+        tx.recentBlockhash = blockhash;
+
+        const txResult = await provider.signAndSendTransaction(tx);
+        const signature = typeof txResult === 'string' ? txResult : (txResult?.signature || txResult?.txid);
+        
+        await solanaConnection.confirmTransaction(signature, 'confirmed');
+        return signature;
+
+      } else if (action === 'withdraw') {
+        if (!stakeAccountPubkey) throw new Error('Stake account required for withdraw');
+
+        const withdrawableAmount = await helius.rpc.getWithdrawableAmount(stakeAccountPubkey, true);
+        if (withdrawableAmount <= 0) throw new Error('No funds available to withdraw yet (still deactivating)');
+
+        console.log(`[Helius] Withdrawing ${withdrawableAmount / LAMPORTS_PER_SOL} SOL...`);
+        const serializedTx = await helius.rpc.createWithdrawTransaction(
+          fromPubkey.toBase58(),
+          stakeAccountPubkey,
+          fromPubkey.toBase58(),
+          withdrawableAmount
+        );
+
+        const tx = Transaction.from(bs58.decode(serializedTx));
+        tx.feePayer = fromPubkey;
+        const { blockhash } = await solanaConnection.getLatestBlockhash();
+        tx.recentBlockhash = blockhash;
+
+        const txResult = await provider.signAndSendTransaction(tx);
+        const signature = typeof txResult === 'string' ? txResult : (txResult?.signature || txResult?.txid);
+        
+        await solanaConnection.confirmTransaction(signature, 'confirmed');
+        return signature;
+      }
+    } catch (heliusError: any) {
+      console.warn('[Helius] Failed, falling back to Native Staking:', heliusError);
+      // Fall through to Native Staking if Helius fails
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // NATIVE SOLANA STAKING (Fallback / Local dev without API Key)
+  // ═══════════════════════════════════════════════════════════════════════════════
+  console.log('[Native] Using Native Solana Staking');
+  
   const walletBalanceLamports = await solanaConnection.getBalance(fromPubkey);
-  const minimumFeeBufferLamports = Math.floor(0.005 * LAMPORTS_PER_SOL); // ~0.005 SOL buffer for fees
+  const minimumFeeBufferLamports = Math.floor(0.005 * LAMPORTS_PER_SOL);
   if (walletBalanceLamports < minimumFeeBufferLamports) {
     throw new Error('Insufficient SOL balance for transaction fees');
   }
@@ -175,43 +279,27 @@ export async function handleSolanaStake(params: StakeParams): Promise<string> {
   let instructions = [];
 
   if (action === 'delegate') {
-    if (!amount) {
-      throw new Error('Amount is required for delegate');
-    }
+    if (!amount) throw new Error('Amount is required for delegate');
     
-    // Auto-select validator if not provided
     let votePubkey: PublicKey;
     if (validatorPubkey) {
       votePubkey = new PublicKey(validatorPubkey);
     } else {
-      // Fetch validators and use the first one
       const voteAccounts = await solanaConnection.getVoteAccounts();
-      if (voteAccounts.current.length === 0) {
-        throw new Error('No validators available on this network');
-      }
+      if (voteAccounts.current.length === 0) throw new Error('No validators available');
       votePubkey = new PublicKey(voteAccounts.current[0].votePubkey);
-      console.log('Auto-selected validator:', votePubkey.toString());
     }
+    
     const desiredStakeLamports = Math.floor(amount * LAMPORTS_PER_SOL);
-    const stakeAccountSpace = 200; // Stake account size in bytes
+    const stakeAccountSpace = 200;
     const rentExemptLamports = await solanaConnection.getMinimumBalanceForRentExemption(stakeAccountSpace);
     const requiredStakeAccountBalance = rentExemptLamports + desiredStakeLamports;
 
-    // Use a seed to create a deterministic stake account address
-    // Format: first 16 chars of validator pubkey (base58 encoded, so safe length)
-    // This ensures the same validator + wallet = same stake account (can add more to same account)
     const seed = `stake_${votePubkey.toString().slice(0, 16)}`;
-    const stakeAccount = await PublicKey.createWithSeed(
-      fromPubkey,
-      seed,
-      STAKE_PROGRAM_ID
-    );
+    const stakeAccount = await PublicKey.createWithSeed(fromPubkey, seed, STAKE_PROGRAM_ID);
 
-    // Check if stake account exists
     const accountInfo = await solanaConnection.getAccountInfo(stakeAccount);
-    
     if (!accountInfo) {
-      // New stake account: create with seed and fund with rent exemption + desired stake
       instructions.push(
         SystemProgram.createAccountWithSeed({
           fromPubkey,
@@ -221,40 +309,26 @@ export async function handleSolanaStake(params: StakeParams): Promise<string> {
           lamports: requiredStakeAccountBalance,
           space: stakeAccountSpace,
           programId: STAKE_PROGRAM_ID,
-        })
-      );
-      
-      instructions.push(
+        }),
         StakeProgram.initialize({
           stakePubkey: stakeAccount,
           authorized: { staker: fromPubkey, withdrawer: fromPubkey },
-          lockup: { unixTimestamp: 0, epoch: 0, custodian: fromPubkey }, // No lockup - user is custodian
+          lockup: { unixTimestamp: 0, epoch: 0, custodian: fromPubkey },
         })
       );
     } else {
-      // Existing stake account: ensure it has at least rent + desired stake, top-up if needed
       const currentStakeAccountLamports = await solanaConnection.getBalance(stakeAccount);
       if (currentStakeAccountLamports < requiredStakeAccountBalance) {
-        const topUpLamports = requiredStakeAccountBalance - currentStakeAccountLamports;
         instructions.push(
           SystemProgram.transfer({
             fromPubkey,
             toPubkey: stakeAccount,
-            lamports: topUpLamports,
+            lamports: requiredStakeAccountBalance - currentStakeAccountLamports,
           })
         );
       }
     }
 
-    // Ensure wallet has enough balance to fund stake + fees before proceeding
-    const walletBalance = await solanaConnection.getBalance(fromPubkey);
-    const totalNeeded = requiredStakeAccountBalance + minimumFeeBufferLamports;
-    if (walletBalance < totalNeeded) {
-      const neededSol = (totalNeeded - walletBalance) / LAMPORTS_PER_SOL;
-      throw new Error(`Insufficient SOL balance. Need ~${neededSol.toFixed(3)} more SOL to stake including fees.`);
-    }
-
-    // Delegate to validator
     instructions.push(
       StakeProgram.delegate({
         stakePubkey: stakeAccount,
@@ -264,30 +338,19 @@ export async function handleSolanaStake(params: StakeParams): Promise<string> {
     );
 
   } else if (action === 'deactivate') {
-    if (!stakeAccountPubkey) {
-      throw new Error('Stake account required for deactivate');
-    }
-    
-    const stakePubkey = new PublicKey(stakeAccountPubkey);
+    if (!stakeAccountPubkey) throw new Error('Stake account required for deactivate');
     instructions.push(
       StakeProgram.deactivate({
-        stakePubkey,
+        stakePubkey: new PublicKey(stakeAccountPubkey),
         authorizedPubkey: fromPubkey,
       })
     );
 
   } else if (action === 'withdraw') {
-    if (!stakeAccountPubkey) {
-      throw new Error('Stake account required for withdraw');
-    }
-    
+    if (!stakeAccountPubkey) throw new Error('Stake account required for withdraw');
     const stakePubkey = new PublicKey(stakeAccountPubkey);
     const balance = await solanaConnection.getBalance(stakePubkey);
-    
-    if (balance === 0) {
-      throw new Error('No funds to withdraw from stake account');
-    }
-    
+    if (balance === 0) throw new Error('No funds to withdraw from stake account');
     instructions.push(
       StakeProgram.withdraw({
         stakePubkey,
@@ -298,151 +361,23 @@ export async function handleSolanaStake(params: StakeParams): Promise<string> {
     );
   }
 
-  // Build transaction
   tx.add(...instructions);
-
-  // Get recent blockhash and set fee payer
   const { blockhash } = await solanaConnection.getLatestBlockhash();
   tx.recentBlockhash = blockhash;
   tx.feePayer = fromPubkey;
 
-  // Get Phantom provider
-  const provider: any = (window as any)?.solana;
-  if (!provider?.isPhantom) {
-    throw new Error('Phantom wallet not available');
-  }
-
-  // Sign and send transaction
   try {
-    // Check connection before proceeding
-    const isConnected = await provider.connect({ onlyIfTrusted: true }).catch(() => false);
-    if (!isConnected) {
-      throw new Error('Wallet not connected. Please connect your wallet and try again.');
-    }
-
-    // Check if we have enough SOL for the transaction
-    const balance = await solanaConnection.getBalance(fromPubkey);
-    const minBalance = await solanaConnection.getMinimumBalanceForRentExemption(0) + (amount ? Number(amount) : 0);
+    console.log('[Native] Requesting signature from Phantom wallet...');
+    const txResult = await provider.signAndSendTransaction(tx);
+    const signature = typeof txResult === 'string' ? txResult : (txResult?.signature || txResult?.txid);
     
-    if (balance < minBalance) {
-      throw new Error('Insufficient SOL balance for this transaction');
-    }
-
-    console.log('Preparing transaction with instructions:', instructions.length);
-    console.log('Transaction details:', {
-      action,
-      amount,
-      validatorPubkey,
-      fromPubkey: fromPubkey.toString(),
-      instructions: instructions.map((ix, idx) => `${idx}: ${ix.programId.toString()}`)
-    });
+    if (!signature) throw new Error('Failed to get transaction signature');
     
-    // Sign and send transaction (no retries for user interaction - only one attempt)
-    let signature: string;
-    
-    try {
-      console.log('Requesting signature from Phantom wallet...');
-      
-      // Use signAndSendTransaction which handles both signing and sending
-      const txResult = await provider.signAndSendTransaction(tx);
-      
-      // Handle different response formats
-      if (typeof txResult === 'string') {
-        signature = txResult;
-      } else if (txResult?.signature) {
-        signature = txResult.signature;
-      } else if (txResult?.txid) {
-        signature = txResult.txid;
-      } else {
-        throw new Error('Invalid transaction response format');
-      }
-      
-      console.log('Transaction signature received:', signature);
-      console.log('View transaction:', `https://explorer.solana.com/tx/${signature}?cluster=devnet`);
-      
-    } catch (e: any) {
-      // Check for user rejection
-      const errorMessage = e?.message || String(e);
-      const errorCode = e?.code;
-      
-      console.error('Transaction signing error:', {
-        message: errorMessage,
-        code: errorCode,
-        error: e
-      });
-      
-      if (
-        errorMessage.includes('User rejected') || 
-        errorMessage.includes('User cancelled') ||
-        errorMessage.includes('user rejected') ||
-        errorMessage.includes('rejected') ||
-        errorCode === 4001 ||
-        errorCode === '4001'
-      ) {
-        throw new Error('Transaction was rejected by user');
-      }
-      
-      // Re-throw other errors
-      throw new Error(`Transaction failed: ${errorMessage || 'Unknown error'}`);
-    }
-    
-    if (!signature) {
-      throw new Error('Failed to get transaction signature');
-    }
-    
-    // Wait for confirmation with timeout
-    console.log('Waiting for transaction confirmation...');
-    try {
-      const confirmation = await Promise.race([
-        solanaConnection.confirmTransaction(signature, 'confirmed'),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Confirmation timeout')), 30000)
-        )
-      ]) as any;
-      
-      if (confirmation?.value?.err) {
-        const errorDetails = JSON.stringify(confirmation.value.err);
-        console.error('Transaction confirmation error:', errorDetails);
-        throw new Error(`Transaction failed on-chain: ${errorDetails}`);
-      }
-      
-      console.log('Transaction confirmed successfully!');
-      console.log('Final balance check...');
-      
-      // Verify the transaction actually happened by checking balance change
-      if (action === 'delegate' && amount) {
-        const newBalance = await solanaConnection.getBalance(fromPubkey);
-        console.log('Wallet balance after transaction:', newBalance / LAMPORTS_PER_SOL, 'SOL');
-      }
-      
-    } catch (confirmationError: any) {
-      // If confirmation fails, check if transaction exists on-chain
-      const txStatus = await solanaConnection.getSignatureStatus(signature);
-      if (txStatus?.value?.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(txStatus.value.err)}`);
-      }
-      // If we can't confirm but transaction exists, it might still be processing
-      console.warn('Could not confirm transaction, but signature exists:', signature);
-    }
-    
+    await solanaConnection.confirmTransaction(signature, 'confirmed');
     return signature;
   } catch (error: any) {
-    console.error('Transaction failed:', error);
-    console.error('Error details:', {
-      message: error.message,
-      code: error.code,
-      logs: error.logs
-    });
-    
-    if (error.message?.includes('User rejected')) {
-      throw new Error('Transaction was rejected by user');
-    } else if (error.message?.includes('Insufficient funds')) {
-      throw new Error('Insufficient SOL balance for transaction');
-    } else if (error.message?.includes('Unexpected error')) {
-      throw new Error('Transaction failed: Please check your wallet connection and try again');
-    } else {
-      throw new Error(`Transaction failed: ${error.message || 'Unknown error'}`);
-    }
+    if (error?.message?.includes('rejected')) throw new Error('Transaction was rejected by user');
+    throw new Error(`Transaction failed: ${error.message}`);
   }
 }
 

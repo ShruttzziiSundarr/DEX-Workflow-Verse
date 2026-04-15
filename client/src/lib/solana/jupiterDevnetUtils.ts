@@ -206,7 +206,6 @@ export function getDevnetTradingPairs(): Array<{ inputMint: string; outputMint: 
  * Check if a trading pair is available on devnet
  */
 export function isDevnetPairAvailable(inputMint: string, outputMint: string): boolean {
-  const hasInput = DEVNET_TOKEN_LIST.some(t => t.address === inputMint);
-  const hasOutput = DEVNET_TOKEN_LIST.some(t => t.address === outputMint);
-  return hasInput && hasOutput && inputMint !== outputMint;
+  // Allow custom tokens to be explicitly routed in mock devnet environment
+  return inputMint !== outputMint;
 }
