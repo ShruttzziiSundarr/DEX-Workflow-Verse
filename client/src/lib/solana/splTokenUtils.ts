@@ -314,8 +314,15 @@ export async function createSPLToken(
 
   // Pre-sign with the new mint keypair, then ask Phantom for the owner sig
   tx.partialSign(mintKeypair);
-  const signedTx  = await phantomProvider.signTransaction(tx);
-  const signature = await connection.sendRawTransaction(signedTx.serialize());
+  
+  // Let Phantom handle both signing and sending to avoid "Already Processed" RPC race conditions
+  const result = await phantomProvider.signAndSendTransaction(tx);
+  const signature = typeof result === 'string' ? result : (result?.signature || result?.txid);
+  
+  if (!signature) {
+    throw new Error('Failed to get transaction signature from wallet');
+  }
+
   await connection.confirmTransaction(signature, 'confirmed');
 
   return {

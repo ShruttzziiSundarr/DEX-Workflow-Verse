@@ -19,7 +19,7 @@ export const DEVNET_TOKENS: Token[] = [
     tags: ["devnet"]
   },
   {
-    address: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    address: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
     symbol: "USDC",
     name: "USD Coin (Devnet)",
     decimals: 6,
@@ -27,7 +27,7 @@ export const DEVNET_TOKENS: Token[] = [
     tags: ["devnet"]
   },
   {
-    address: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    address: "EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS",
     symbol: "USDT",
     name: "Tether USD (Devnet)",
     decimals: 6,

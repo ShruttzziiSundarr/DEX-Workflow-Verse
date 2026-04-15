@@ -5,7 +5,7 @@ import { users, workflows, workflowActions, workflowExecutions, lpPositions,
   type LpPosition, type InsertLpPosition,
   type ExecutionStatus
 } from "@shared/schema";
-import { db } from "./db";
+import { isMemoryMode, db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
@@ -39,20 +39,183 @@ export interface IStorage {
   deleteLPPosition(walletAddress: string, poolAddress: string): Promise<boolean>;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// IN-MEMORY STORAGE — works without any database
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export class MemoryStorage implements IStorage {
+  private usersMap = new Map<number, User>();
+  private workflowsMap = new Map<number, Workflow>();
+  private actionsMap = new Map<number, WorkflowAction>();
+  private executionsMap = new Map<number, WorkflowExecution>();
+  private lpPositionsMap = new Map<string, LpPosition>(); // key = wallet:pool
+  private nextId = { user: 1, workflow: 1, action: 1, execution: 1, lp: 1 };
+
+  // ── Users ──
+  async getUser(id: number) { return this.usersMap.get(id); }
+  async getUserByUsername(username: string) {
+    return [...this.usersMap.values()].find(u => u.username === username);
+  }
+  async createUser(user: InsertUser): Promise<User> {
+    const id = this.nextId.user++;
+    const newUser: User = { id, username: user.username, password: user.password, walletAddress: user.walletAddress ?? null };
+    this.usersMap.set(id, newUser);
+    return newUser;
+  }
+
+  // ── Workflows ──
+  async getWorkflows() { return [...this.workflowsMap.values()]; }
+  async getWorkflow(id: number) { return this.workflowsMap.get(id); }
+  async createWorkflow(workflow: InsertWorkflow): Promise<Workflow> {
+    const id = this.nextId.workflow++;
+    const newWf: Workflow = {
+      id,
+      userId: workflow.userId ?? null,
+      name: workflow.name,
+      description: workflow.description ?? null,
+      nodes: workflow.nodes,
+      edges: workflow.edges,
+      created: workflow.created,
+      updated: workflow.updated,
+    };
+    this.workflowsMap.set(id, newWf);
+    return newWf;
+  }
+  async updateWorkflow(id: number, workflow: Partial<InsertWorkflow>) {
+    const existing = this.workflowsMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...workflow };
+    this.workflowsMap.set(id, updated);
+    return updated;
+  }
+  async deleteWorkflow(id: number) {
+    // Delete associated data first
+    for (const [aId, action] of this.actionsMap) {
+      if (action.workflowId === id) this.actionsMap.delete(aId);
+    }
+    for (const [eId, exec] of this.executionsMap) {
+      if (exec.workflowId === id) this.executionsMap.delete(eId);
+    }
+    return this.workflowsMap.delete(id);
+  }
+
+  // ── Actions ──
+  async getWorkflowActions(workflowId: number) {
+    return [...this.actionsMap.values()]
+      .filter(a => a.workflowId === workflowId)
+      .sort((a, b) => a.order - b.order);
+  }
+  async createWorkflowAction(action: InsertWorkflowAction): Promise<WorkflowAction> {
+    const id = this.nextId.action++;
+    const newAction: WorkflowAction = {
+      id,
+      workflowId: action.workflowId,
+      name: action.name,
+      type: action.type,
+      config: action.config,
+      order: action.order,
+      createdAt: new Date(),
+    };
+    this.actionsMap.set(id, newAction);
+    return newAction;
+  }
+  async updateWorkflowAction(id: number, action: Partial<InsertWorkflowAction>) {
+    const existing = this.actionsMap.get(id);
+    if (!existing) return undefined;
+    const updated = { ...existing, ...action };
+    this.actionsMap.set(id, updated);
+    return updated;
+  }
+  async deleteWorkflowAction(id: number) { return this.actionsMap.delete(id); }
+
+  // ── Executions ──
+  async getWorkflowExecutions(workflowId: number) {
+    return [...this.executionsMap.values()]
+      .filter(e => e.workflowId === workflowId)
+      .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  }
+  async getWorkflowExecution(id: number) { return this.executionsMap.get(id); }
+  async createWorkflowExecution(execution: InsertWorkflowExecution): Promise<WorkflowExecution> {
+    const id = this.nextId.execution++;
+    const newExec: WorkflowExecution = {
+      id,
+      workflowId: execution.workflowId,
+      status: execution.status,
+      result: null,
+      error: null,
+      startedAt: new Date(),
+      completedAt: null,
+    };
+    this.executionsMap.set(id, newExec);
+    return newExec;
+  }
+  async updateWorkflowExecutionStatus(id: number, status: ExecutionStatus, result?: Record<string, any>, error?: string) {
+    const existing = this.executionsMap.get(id);
+    if (!existing) return undefined;
+    const updated: WorkflowExecution = {
+      ...existing,
+      status,
+      result: result ?? existing.result,
+      error: error ?? existing.error,
+      completedAt: (status === 'completed' || status === 'failed') ? new Date() : existing.completedAt,
+    };
+    this.executionsMap.set(id, updated);
+    return updated;
+  }
+
+  // ── LP Positions ──
+  async getLPPositions(walletAddress: string) {
+    return [...this.lpPositionsMap.values()].filter(p => p.walletAddress === walletAddress);
+  }
+  async upsertLPPosition(position: InsertLpPosition): Promise<LpPosition> {
+    const key = `${position.walletAddress}:${position.poolAddress}`;
+    const existing = this.lpPositionsMap.get(key);
+    const id = existing?.id ?? this.nextId.lp++;
+    const lp: LpPosition = {
+      id,
+      walletAddress: position.walletAddress,
+      poolAddress: position.poolAddress,
+      lpBalance: position.lpBalance,
+      sharePercentage: position.sharePercentage,
+      tokenAValue: position.tokenAValue,
+      tokenBValue: position.tokenBValue,
+      valueUsd: position.valueUsd,
+      createdAt: position.createdAt,
+      lastClaimedAt: position.lastClaimedAt,
+      updatedAt: new Date(),
+    };
+    this.lpPositionsMap.set(key, lp);
+    return lp;
+  }
+  async deleteLPPosition(walletAddress: string, poolAddress: string) {
+    return this.lpPositionsMap.delete(`${walletAddress}:${poolAddress}`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DATABASE STORAGE — PostgreSQL via Drizzle ORM (requires valid DATABASE_URL)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 export class DatabaseStorage implements IStorage {
+  private db: any;
+
+  constructor(db: any) {
+    this.db = db;
+  }
+
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
+    const [user] = await this.db.select().from(users).where(eq(users.id, id));
     return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
+    const [user] = await this.db.select().from(users).where(eq(users.username, username));
     return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db
+    const [user] = await this.db
       .insert(users)
       .values(insertUser)
       .returning();
@@ -61,11 +224,11 @@ export class DatabaseStorage implements IStorage {
   
   // Workflow methods
   async getWorkflows(): Promise<Workflow[]> {
-    return await db.select().from(workflows);
+    return await this.db.select().from(workflows);
   }
   
   async getWorkflow(id: number): Promise<Workflow | undefined> {
-    const [workflow] = await db
+    const [workflow] = await this.db
       .select()
       .from(workflows)
       .where(eq(workflows.id, id));
@@ -73,7 +236,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createWorkflow(workflow: InsertWorkflow): Promise<Workflow> {
-    const [newWorkflow] = await db
+    const [newWorkflow] = await this.db
       .insert(workflows)
       .values(workflow)
       .returning();
@@ -81,7 +244,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateWorkflow(id: number, workflow: Partial<InsertWorkflow>): Promise<Workflow | undefined> {
-    const [updatedWorkflow] = await db
+    const [updatedWorkflow] = await this.db
       .update(workflows)
       .set(workflow)
       .where(eq(workflows.id, id))
@@ -92,11 +255,11 @@ export class DatabaseStorage implements IStorage {
   async deleteWorkflow(id: number): Promise<boolean> {
     try {
       // Delete associated actions and executions first
-      await db.delete(workflowActions).where(eq(workflowActions.workflowId, id));
-      await db.delete(workflowExecutions).where(eq(workflowExecutions.workflowId, id));
+      await this.db.delete(workflowActions).where(eq(workflowActions.workflowId, id));
+      await this.db.delete(workflowExecutions).where(eq(workflowExecutions.workflowId, id));
       
       // Then delete the workflow
-      const [deletedWorkflow] = await db
+      const [deletedWorkflow] = await this.db
         .delete(workflows)
         .where(eq(workflows.id, id))
         .returning();
@@ -109,7 +272,7 @@ export class DatabaseStorage implements IStorage {
   
   // Workflow Actions methods
   async getWorkflowActions(workflowId: number): Promise<WorkflowAction[]> {
-    return await db
+    return await this.db
       .select()
       .from(workflowActions)
       .where(eq(workflowActions.workflowId, workflowId))
@@ -117,7 +280,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createWorkflowAction(action: InsertWorkflowAction): Promise<WorkflowAction> {
-    const [newAction] = await db
+    const [newAction] = await this.db
       .insert(workflowActions)
       .values(action)
       .returning();
@@ -125,7 +288,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async updateWorkflowAction(id: number, action: Partial<InsertWorkflowAction>): Promise<WorkflowAction | undefined> {
-    const [updatedAction] = await db
+    const [updatedAction] = await this.db
       .update(workflowActions)
       .set(action)
       .where(eq(workflowActions.id, id))
@@ -134,7 +297,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async deleteWorkflowAction(id: number): Promise<boolean> {
-    const [deletedAction] = await db
+    const [deletedAction] = await this.db
       .delete(workflowActions)
       .where(eq(workflowActions.id, id))
       .returning();
@@ -143,7 +306,7 @@ export class DatabaseStorage implements IStorage {
   
   // Workflow Execution methods
   async getWorkflowExecutions(workflowId: number): Promise<WorkflowExecution[]> {
-    return await db
+    return await this.db
       .select()
       .from(workflowExecutions)
       .where(eq(workflowExecutions.workflowId, workflowId))
@@ -151,7 +314,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async getWorkflowExecution(id: number): Promise<WorkflowExecution | undefined> {
-    const [execution] = await db
+    const [execution] = await this.db
       .select()
       .from(workflowExecutions)
       .where(eq(workflowExecutions.id, id));
@@ -159,7 +322,7 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createWorkflowExecution(execution: InsertWorkflowExecution): Promise<WorkflowExecution> {
-    const [newExecution] = await db
+    const [newExecution] = await this.db
       .insert(workflowExecutions)
       .values(execution)
       .returning();
@@ -186,7 +349,7 @@ export class DatabaseStorage implements IStorage {
       updates.error = error;
     }
     
-    const [updatedExecution] = await db
+    const [updatedExecution] = await this.db
       .update(workflowExecutions)
       .set(updates)
       .where(eq(workflowExecutions.id, id))
@@ -197,14 +360,14 @@ export class DatabaseStorage implements IStorage {
 
   // LP Position methods
   async getLPPositions(walletAddress: string): Promise<LpPosition[]> {
-    return await db
+    return await this.db
       .select()
       .from(lpPositions)
       .where(eq(lpPositions.walletAddress, walletAddress));
   }
 
   async upsertLPPosition(position: InsertLpPosition): Promise<LpPosition> {
-    const [row] = await db
+    const [row] = await this.db
       .insert(lpPositions)
       .values(position)
       .onConflictDoUpdate({
@@ -224,7 +387,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteLPPosition(walletAddress: string, poolAddress: string): Promise<boolean> {
-    const [deleted] = await db
+    const [deleted] = await this.db
       .delete(lpPositions)
       .where(and(
         eq(lpPositions.walletAddress, walletAddress),
@@ -235,4 +398,18 @@ export class DatabaseStorage implements IStorage {
   }
 }
 
-export const storage = new DatabaseStorage();
+// ═══════════════════════════════════════════════════════════════════════════════
+// EXPORT — choose storage based on environment
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let storage: IStorage;
+
+if (isMemoryMode || !db) {
+  storage = new MemoryStorage();
+  console.log('[Storage] Using in-memory storage');
+} else {
+  storage = new DatabaseStorage(db);
+  console.log('[Storage] Using PostgreSQL database storage');
+}
+
+export { storage };

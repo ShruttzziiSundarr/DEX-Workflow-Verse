@@ -20,8 +20,8 @@ interface StakeResult {
  * Get the current cluster from connection or environment
  */
 function getCluster(): Cluster {
-  // Check if we're on mainnet by checking the RPC endpoint
-  const rpcUrl = process.env.VITE_SOLANA_RPC_URL || '';
+  // In Vite, use import.meta.env; process.env doesn't exist in browser
+  const rpcUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SOLANA_RPC_URL) || '';
   if (rpcUrl.includes('mainnet') || rpcUrl.includes('api.mainnet')) {
     return 'mainnet-beta';
   }

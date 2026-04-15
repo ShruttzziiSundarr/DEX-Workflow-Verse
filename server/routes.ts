@@ -438,9 +438,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/stake", async (req: Request, res: Response) => {
     const { action, amount, validatorPubkey, stakeAccountPubkey, fromPubkey } = req.body;
     try {
-      const { handleSolanaStake } = await import('../client/src/lib/solana/solanaStaking');
-      const { PublicKey } = await import('@solana/web3.js');
-
       if (!fromPubkey) {
         return res.status(400).json({ success: false, error: 'Wallet public key is required' });
       }
@@ -451,8 +448,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       if (action === 'delegate') {
-        if (!amount || !validatorPubkey) {
-          return res.status(400).json({ success: false, error: 'Amount and validatorPubkey are required for delegate' });
+        if (!amount) {
+          return res.status(400).json({ success: false, error: 'Amount is required for delegate' });
         }
       } else if (action === 'deactivate' || action === 'withdraw') {
         if (!stakeAccountPubkey) {
@@ -460,22 +457,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      const signature = await handleSolanaStake({
-        action,
-        amount: action === 'delegate' ? parseFloat(amount) : undefined,
-        validatorPubkey,
-        stakeAccountPubkey,
-        fromPubkey: new PublicKey(fromPubkey),
-      });
+      // Server-side mock simulation (real staking happens client-side via Phantom wallet)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const mockSignature = 'mock_stake_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
 
       res.json({
         success: true,
-        signature,
-        message: 'Transaction confirmed',
+        simulated: true,
+        signature: mockSignature,
+        message: `${action} transaction simulated successfully`,
         action,
         amount: action === 'delegate' ? amount : undefined,
-        validatorPubkey: action === 'delegate' ? validatorPubkey : undefined,
+        validatorPubkey: action === 'delegate' ? (validatorPubkey || 'auto-selected') : undefined,
         stakeAccountPubkey: action !== 'delegate' ? stakeAccountPubkey : undefined,
+        mode: 'mock',
       });
     } catch (error) {
       console.error('Solana stake transaction error:', error);
@@ -486,82 +481,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/marinade/stake", async (req: Request, res: Response) => {
     const { action, amount, stakeAccountPubkey, fromPubkey } = req.body;
     try {
-      const { handleMarinadeStake } = await import('../client/src/lib/solana/marinadeStaking');
-      const { PublicKey } = await import('@solana/web3.js');
-      
       if (!fromPubkey) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Wallet public key is required' 
-        });
+        return res.status(400).json({ success: false, error: 'Wallet public key is required' });
       }
 
-      // Validate required parameters
       if (action === 'stake' && !amount) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Amount is required for staking' 
-        });
+        return res.status(400).json({ success: false, error: 'Amount is required for staking' });
       }
 
       if (action === 'unstake' && !stakeAccountPubkey) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Stake account is required for unstaking' 
-        });
+        return res.status(400).json({ success: false, error: 'Stake account is required for unstaking' });
       }
 
-      // Prepare the staking transaction
-      const result = await handleMarinadeStake({
-        action,
-        amount: action === 'stake' ? parseFloat(amount) : undefined,
-        stakeAccountPubkey,
-        fromPubkey: new PublicKey(fromPubkey),
-      });
+      // Server-side mock simulation (real Marinade staking happens client-side via Phantom)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const mockSignature = 'mock_marinade_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
+      const stakingType = action === 'stake' ? 'Liquid Staking (SOL → mSOL)' : 'Unstaking (mSOL → SOL)';
 
       res.json({
         success: true,
-        transaction: result.transaction,
-        message: result.message,
+        simulated: true,
+        signature: mockSignature,
+        message: `Marinade ${stakingType} simulated successfully`,
         action,
         amount: action === 'stake' ? amount : undefined,
         stakeAccountPubkey: action === 'unstake' ? stakeAccountPubkey : undefined,
+        mode: 'mock',
+        estimatedRewards: action === 'stake' ? {
+          apy: 7.5,
+          dailyReward: (parseFloat(amount || '0') * 0.075) / 365,
+        } : undefined,
       });
     } catch (error) {
       console.error('Marinade stake transaction error:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : String(error) 
-      });
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 
-  // Get Marinade stake accounts for a wallet
+  // Get Marinade stake accounts for a wallet (mock for devnet)
   app.get("/api/marinade/accounts/:walletAddress", async (req: Request, res: Response) => {
     try {
-      const { getMarinadeStakeAccounts } = await import('../client/src/lib/solana/marinadeStaking');
-      const { PublicKey } = await import('@solana/web3.js');
-      
       const walletAddress = req.params.walletAddress;
       if (!walletAddress) {
-        return res.status(400).json({ 
-          success: false, 
-          error: 'Wallet address is required' 
-        });
+        return res.status(400).json({ success: false, error: 'Wallet address is required' });
       }
 
-      const stakeAccounts = await getMarinadeStakeAccounts(new PublicKey(walletAddress));
-      
+      // Mock response — Marinade doesn't exist on devnet
       res.json({
         success: true,
-        ...stakeAccounts
+        accounts: [],
+        totalStaked: 0,
+        msolMint: null,
+        mode: 'mock',
       });
     } catch (error) {
       console.error('Error fetching Marinade stake accounts:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : String(error) 
-      });
+      res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
   });
 

@@ -170,7 +170,7 @@ async function deletePositionFromAPI(walletAddress: string, poolAddress: string)
 // ─── Cluster helpers ──────────────────────────────────────────────────────────
 
 function getCluster(): Cluster {
-  const rpcUrl = (typeof process !== 'undefined' ? process.env?.VITE_SOLANA_RPC_URL : undefined) || '';
+  const rpcUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SOLANA_RPC_URL) || '';
   return rpcUrl.includes('mainnet') ? 'mainnet-beta' : 'devnet';
 }
 
@@ -180,8 +180,8 @@ function getConnection(cluster: Cluster): Connection {
 
 const DEVNET_TOKEN_MINTS: Record<string, string> = {
   SOL: 'So11111111111111111111111111111111111111112',
-  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-  USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+  USDC: '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU',  // Devnet USDC
+  USDT: 'EJwZgeZrdC8TXTQbQBoL6bfuAnFUUy1PVCMB4DYPzVaS',  // Devnet USDT
   BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
   RAY: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R',
   ORCA: 'orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE',
