@@ -1504,10 +1504,12 @@ export function ConfigPanel() {
               </div>
             </div>
 
-            {lpConfig.action === 'addLiquidity' ? (
+            {(lpConfig.action === 'addLiquidity' || lpConfig.action === 'createPool') ? (
               <>
                 <div>
-                  <Label className="text-xs text-muted-foreground">Amount {lpConfig.tokenA}</Label>
+                  <Label className="text-xs text-muted-foreground">
+                    {lpConfig.action === 'createPool' ? 'Initial' : ''} Amount {lpConfig.tokenA}
+                  </Label>
                   <Input
                     type="number"
                     step="0.1"
@@ -1519,7 +1521,9 @@ export function ConfigPanel() {
                 </div>
 
                 <div>
-                  <Label className="text-xs text-muted-foreground">Amount {lpConfig.tokenB}</Label>
+                  <Label className="text-xs text-muted-foreground">
+                    {lpConfig.action === 'createPool' ? 'Initial' : ''} Amount {lpConfig.tokenB}
+                  </Label>
                   <Input
                     type="number"
                     step="0.1"

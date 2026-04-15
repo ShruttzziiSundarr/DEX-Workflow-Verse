@@ -111,14 +111,14 @@ const MODULES: ModuleInfo[] = [
   {
     type: "bridge",
     title: "BTC Bridge",
-    description: "Bridge BTC to sBTC (simulated)",
+    description: "Tracked bridge lifecycle with resumable status flow",
     icon: "bridge",
     color: "#94A3B8",
     bgColor: "rgba(148, 163, 184, 0.15)",
-    status: "demo",
-    badge: "Simulated",
-    example: "Bridge 0.01 BTC from Bitcoin mainnet to sBTC on Solana for use in DeFi protocols.",
-    useCase: "Demonstrates cross-chain bridging workflows. Fully simulated — no real bridge protocol connected.",
+    status: "partial",
+    badge: "Hybrid",
+    example: "Initiate a BTC bridge request, monitor confirmations, and track mint lifecycle states with resumable progress logs.",
+    useCase: "Demonstrates production-grade long-running bridge UX (status, retries, cancellations) while mint execution remains simulated.",
   },
 ];
 

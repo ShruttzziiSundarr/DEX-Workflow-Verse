@@ -13,6 +13,7 @@ const getNodeStyles = (type: ModuleType) => {
   switch (type) {
     case "swap":
       return { backgroundColor: "rgba(49, 101, 245, 0.2)", borderLeft: "4px solid #3165F5", icon: "swap_horiz", iconColor: "#3165F5" };
+    case "liquidity":
     case "addLiquidity":
       return { backgroundColor: "rgba(6, 182, 212, 0.2)", borderLeft: "4px solid #06B6D4", icon: "water_drop", iconColor: "#06B6D4" };
     case "liquidityPool":
@@ -83,6 +84,7 @@ const getNodeContent = (type: ModuleType, config: any) => {
           </div>
         </>
       );
+    case "liquidity":
     case "addLiquidity":
     case "liquidityPool":
       return (

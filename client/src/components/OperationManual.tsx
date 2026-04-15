@@ -37,6 +37,7 @@ interface OperationDoc {
   icon: React.ReactNode;
   category: string;
   onChain: boolean;
+  executionMode?: 'onchain' | 'hybrid' | 'simulated';
   platform: string;
   platformUrl: string;
   whenToUse: string;
@@ -58,6 +59,7 @@ const OPERATIONS: OperationDoc[] = [
     icon: <Layers className="h-4 w-4" />,
     category: 'Automation',
     onChain: true,
+    executionMode: 'hybrid',
     platform: 'DEX WorkflowVerse',
     platformUrl: 'Builder → Auto-Earn Vault',
     whenToUse:
@@ -532,6 +534,7 @@ const OPERATIONS: OperationDoc[] = [
     icon: <Globe className="h-4 w-4" />,
     category: 'Cross-Chain',
     onChain: false,
+    executionMode: 'simulated',
     platform: 'portalbridge.com / debridge.finance',
     platformUrl: 'Portal / deBridge',
     whenToUse:
@@ -575,6 +578,7 @@ const OPERATIONS: OperationDoc[] = [
     icon: <Gift className="h-4 w-4" />,
     category: 'Rewards',
     onChain: true,
+    executionMode: 'hybrid',
     platform: 'raydium.io / orca.so / marinade.finance',
     platformUrl: 'Multiple platforms',
     whenToUse:
@@ -618,8 +622,9 @@ const OPERATIONS: OperationDoc[] = [
     whenToUse:
       'For near-instant wallet-to-wallet SOL payments on Solana Devnet using a direct signed transfer transaction.',
     prerequisites: [
-      'Lightning wallet app (Muun/Phoenix/Strike)',
-      'BOLT11 invoice or recipient info',
+      'Phantom wallet connected to Solana Devnet',
+      'Valid Solana recipient wallet address',
+      'Sufficient SOL balance for amount + fee',
     ],
     manualSteps: [
       'Open wallet transfer flow and paste recipient',
@@ -824,6 +829,7 @@ export function OperationManual({ open, onClose, selectedType }: OperationManual
   }, [selectedType]);
 
   const op = OPERATIONS.find((o) => o.type === activeType) || OPERATIONS[0];
+  const executionMode = op.executionMode || (op.onChain ? 'onchain' : 'simulated');
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -896,11 +902,17 @@ export function OperationManual({ open, onClose, selectedType }: OperationManual
                   <Badge variant="outline" className={`text-[10px] ${CAT_BADGE[op.category]}`}>
                     {op.category}
                   </Badge>
-                  {op.onChain ? (
+                  {executionMode === 'onchain' && (
                     <Badge variant="outline" className="text-[10px] bg-green-500/10 text-green-400 border-green-500/30">
                       🔗 On-chain
                     </Badge>
-                  ) : (
+                  )}
+                  {executionMode === 'hybrid' && (
+                    <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-300 border-amber-500/30">
+                      ⚙️ Hybrid
+                    </Badge>
+                  )}
+                  {executionMode === 'simulated' && (
                     <Badge variant="outline" className="text-[10px] bg-muted text-muted-foreground">
                       🧪 Simulated
                     </Badge>

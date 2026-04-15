@@ -602,6 +602,7 @@ export function WorkflowCanvas() {
 
       // Find and execute ALL liquidity nodes (addLiquidity / removeLiquidity / liquidityPool)
       const liquidityNodes = nodes.filter(n =>
+        n.data?.type === 'liquidity' ||
         n.data?.type === 'addLiquidity' ||
         n.data?.type === 'liquidityPool' ||
         n.data?.type === 'removeLiquidity'
@@ -624,7 +625,23 @@ export function WorkflowCanvas() {
         const slippage = parseFloat(cfg.slippage || '1');
 
         try {
-          if (lpAction === 'addLiquidity') {
+          if (lpAction === 'createPool') {
+            toast({ title: 'Creating Pool...', description: `Deploying ${tokenA}/${tokenB} Raydium CPMM pool` });
+            setNodeExecStatus(lpNode.id, 'running');
+            const result = await handleLiquidityPool({
+              action: 'createPool', tokenA, tokenB, amountA, amountB, slippage,
+              fromPubkey: new PublicKey(userPublicKey),
+            });
+            toast({ title: 'Pool Created ✓', description: result.message });
+            setNodeExecStatus(lpNode.id, 'success');
+            executionActions.push({
+              type: 'liquidityPool',
+              status: 'success',
+              message: result.message,
+              signature: result.signature,
+              details: { action: 'createPool', tokenA, tokenB, amountA, amountB, poolAddress: result.poolAddress, mode: result.mode },
+            });
+          } else if (lpAction === 'addLiquidity') {
             toast({ title: 'Adding Liquidity...', description: `${amountA} ${tokenA} + ${amountB} ${tokenB}` });
             setNodeExecStatus(lpNode.id, 'running');
             const result = await handleLiquidityPool({
