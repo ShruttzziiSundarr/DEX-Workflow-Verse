@@ -56,18 +56,20 @@ const MOCK_POOL_RESERVES: Record<string, { reserveA: number; reserveB: number }>
 export function getMockSwapQuote(params: MockSwapParams): MockSwapQuote {
   const { inputMint, outputMint, uiAmount, inputDecimals, outputDecimals, slippageBps } = params;
 
-  const inputToken = getDevnetTokenByAddress(inputMint);
-  const outputToken = getDevnetTokenByAddress(outputMint);
-
-  if (!inputToken || !outputToken) {
-    throw new Error(`Unknown token pair: ${inputMint} -> ${outputMint}`);
-  }
+  const inputToken = getDevnetTokenByAddress(inputMint) ?? {
+    symbol: `${inputMint.slice(0, 4)}...${inputMint.slice(-4)}`,
+  };
+  const outputToken = getDevnetTokenByAddress(outputMint) ?? {
+    symbol: `${outputMint.slice(0, 4)}...${outputMint.slice(-4)}`,
+  };
 
   // Calculate exchange rate using mock prices
-  const exchangeRate = getDevnetExchangeRate(inputMint, outputMint);
+  const exchangeRate = getDevnetExchangeRate(inputMint, outputMint) || 1;
 
-  if (exchangeRate === 0) {
-    throw new Error(`No price data available for ${inputToken.symbol} -> ${outputToken.symbol}`);
+  if (exchangeRate === 1) {
+    console.warn(
+      `[MockJupiter] No mock price for ${inputMint} -> ${outputMint}; using neutral 1:1 fallback quote.`,
+    );
   }
 
   // Calculate output amount

@@ -5,8 +5,8 @@ import {
   SystemProgram,
   Transaction,
 } from '@solana/web3.js';
+import { Raydium as RaydiumSDK } from '@raydium-io/raydium-sdk-v2';
 
-const RAYDIUM_PKG = '@raydium-io/raydium-sdk-v2';
 type Cluster = 'mainnet-beta' | 'devnet';
 const isBrowser = typeof window !== 'undefined';
 
@@ -172,6 +172,10 @@ async function deletePositionFromAPI(walletAddress: string, poolAddress: string)
 function getCluster(): Cluster {
   const rpcUrl = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SOLANA_RPC_URL) || '';
   return rpcUrl.includes('mainnet') ? 'mainnet-beta' : 'devnet';
+}
+
+function isDevnetRealOnly(): boolean {
+  return String((import.meta as any).env?.VITE_DEVNET_REAL_ONLY || 'false').toLowerCase() === 'true';
 }
 
 function getConnection(cluster: Cluster): Connection {
@@ -342,17 +346,153 @@ export async function handleLiquidityPool({
     }
   }
 
-  // ── STRICT ON-CHAIN ENFORCEMENT ─────────────────────────────────────────────
+  // ── DEVNET FALLBACK (mock pools) ────────────────────────────────────────────
+  // If no real CPMM route is available, continue in mock mode so workflows remain
+  // executable in demo/devnet environments.
   if (cluster === 'devnet') {
-    throw new Error('No on-chain pool found. On Devnet, official pools do not exist. Please use the "Create Pool" action to deploy a custom pool first before adding or removing liquidity.');
+    if (isDevnetRealOnly()) {
+      throw new Error(
+        'Real-only devnet mode is enabled; simulated liquidity fallback is disabled. ' +
+        'Create/use a valid on-chain Raydium pool and retry.',
+      );
+    }
+
+    const normalizedPoolAddress = poolAddress?.trim();
+    const resolvedMockPool =
+      (normalizedPoolAddress ? POOL_BY_ADDRESS[normalizedPoolAddress] : undefined) ||
+      MOCK_POOLS[`${tokenA}/${tokenB}`] ||
+      MOCK_POOLS[`${tokenB}/${tokenA}`];
+
+    if (!resolvedMockPool) {
+      throw new Error(
+        `No mock or on-chain pool found for ${tokenA}/${tokenB}. ` +
+        'For demo mode, use one of the default pairs (SOL/USDC, SOL/USDT, RAY/SOL) or create a Raydium pool first.',
+      );
+    }
+
+    // Try to anchor the action with a real devnet signature. If wallet/provider is
+    // unstable, still continue with a mock signature so UX does not hard-fail.
+    let signature: string;
+    try {
+      signature = isBrowser
+        ? await sendDevnetAnchorTx(fromPubkey, connection)
+        : `mock_lp_${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`;
+    } catch {
+      signature = `mock_lp_${Math.random().toString(36).slice(2, 12)}${Date.now().toString(36)}`;
+    }
+
+    const walletAddress = fromPubkey.toBase58();
+    const allPositions = loadStoredPositions();
+    const userPositions = allPositions[walletAddress] || [];
+    const now = Date.now();
+
+    if (action === 'addLiquidity') {
+      if (!amountA || !amountB || amountA <= 0 || amountB <= 0) {
+        throw new Error('Both amountA and amountB are required for addLiquidity');
+      }
+
+      const lpTokens = calculateLPTokens(amountA, amountB, resolvedMockPool);
+      const priceAInB = resolvedMockPool.reserveA > 0 ? (resolvedMockPool.reserveB / resolvedMockPool.reserveA) : 0;
+      const valueUSD =
+        resolvedMockPool.tokenB === 'USDC' || resolvedMockPool.tokenB === 'USDT'
+          ? (amountA * priceAInB) + amountB
+          : (resolvedMockPool.tokenA === 'USDC' || resolvedMockPool.tokenA === 'USDT')
+            ? amountA + (amountB / Math.max(priceAInB, 1e-9))
+            : amountA + amountB;
+
+      const existingIndex = userPositions.findIndex((p) => p.poolAddress === resolvedMockPool.poolAddress);
+      if (existingIndex >= 0) {
+        const existing = userPositions[existingIndex];
+        const nextLpBalance = existing.lpBalance + lpTokens;
+        const weightedValueUsd = existing.valueUSD + valueUSD;
+        const sharePercentage = (nextLpBalance / Math.max(resolvedMockPool.lpSupply + nextLpBalance, 1e-9)) * 100;
+        userPositions[existingIndex] = {
+          ...existing,
+          lpBalance: nextLpBalance,
+          sharePercentage,
+          valueUSD: weightedValueUsd,
+          tokenAValue: existing.tokenAValue + amountA,
+          tokenBValue: existing.tokenBValue + amountB,
+          lastClaimedAt: now,
+        };
+      } else {
+        const sharePercentage = (lpTokens / Math.max(resolvedMockPool.lpSupply + lpTokens, 1e-9)) * 100;
+        userPositions.push({
+          poolAddress: resolvedMockPool.poolAddress,
+          lpBalance: lpTokens,
+          sharePercentage,
+          tokenAValue: amountA,
+          tokenBValue: amountB,
+          valueUSD,
+          createdAt: now,
+          lastClaimedAt: now,
+        });
+      }
+
+      allPositions[walletAddress] = userPositions;
+      saveStoredPositions(allPositions);
+      const latest = userPositions.find((p) => p.poolAddress === resolvedMockPool.poolAddress);
+      if (latest) void syncPositionToAPI(walletAddress, latest);
+
+      return {
+        success: true,
+        signature,
+        lpTokensReceived: lpTokens,
+        poolAddress: resolvedMockPool.poolAddress,
+        mode: 'mock',
+        message: `Added liquidity to ${resolvedMockPool.tokenA}/${resolvedMockPool.tokenB} (devnet simulated)`,
+      };
+    }
+
+    if (action === 'removeLiquidity') {
+      if (!lpTokenAmount || lpTokenAmount <= 0) {
+        throw new Error('lpTokenAmount is required for removeLiquidity');
+      }
+
+      const posIndex = userPositions.findIndex((p) => p.poolAddress === resolvedMockPool.poolAddress);
+      if (posIndex < 0 || userPositions[posIndex].lpBalance <= 0) {
+        throw new Error(`No LP position found for pool ${resolvedMockPool.tokenA}/${resolvedMockPool.tokenB}`);
+      }
+
+      const position = userPositions[posIndex];
+      const burnAmount = Math.min(lpTokenAmount, position.lpBalance);
+      const { tokenA: tokenAOut, tokenB: tokenBOut } = calculateTokensFromLP(burnAmount, resolvedMockPool);
+      const nextLpBalance = position.lpBalance - burnAmount;
+
+      if (nextLpBalance <= 1e-9) {
+        userPositions.splice(posIndex, 1);
+        void deletePositionFromAPI(walletAddress, resolvedMockPool.poolAddress);
+      } else {
+        userPositions[posIndex] = {
+          ...position,
+          lpBalance: nextLpBalance,
+          sharePercentage: (nextLpBalance / Math.max(resolvedMockPool.lpSupply, 1e-9)) * 100,
+          tokenAValue: Math.max(0, position.tokenAValue - tokenAOut),
+          tokenBValue: Math.max(0, position.tokenBValue - tokenBOut),
+          valueUSD: Math.max(0, position.valueUSD * (nextLpBalance / Math.max(position.lpBalance, 1e-9))),
+          lastClaimedAt: now,
+        };
+        void syncPositionToAPI(walletAddress, userPositions[posIndex]);
+      }
+
+      allPositions[walletAddress] = userPositions;
+      saveStoredPositions(allPositions);
+
+      return {
+        success: true,
+        signature,
+        tokenAReceived: tokenAOut,
+        tokenBReceived: tokenBOut,
+        poolAddress: resolvedMockPool.poolAddress,
+        mode: 'mock',
+        message: `Removed liquidity from ${resolvedMockPool.tokenA}/${resolvedMockPool.tokenB} (devnet simulated)`,
+      };
+    }
   }
 
   // ── MAINNET (Raydium) ────────────────────────────────────────────────────────
   try {
-    // @ts-ignore
-    const { Raydium } = await import(/* @vite-ignore */ RAYDIUM_PKG).catch(() => {
-      throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
-    });
+    const Raydium = RaydiumSDK;
     const raydium = await Raydium.load({ owner: fromPubkey, connection, cluster: 'mainnet-beta' });
 
     if (action === 'addLiquidity') {
@@ -508,9 +648,7 @@ export async function getPoolInfo(tokenA: string, tokenB: string): Promise<PoolI
     return pool;
   }
   // mainnet: fetch live pool data from Raydium API
-  const { Raydium } = await import(/* @vite-ignore */ RAYDIUM_PKG).catch(() => {
-    throw new Error('Raydium SDK not installed. Run: npm install @raydium-io/raydium-sdk-v2');
-  });
+  const Raydium = RaydiumSDK;
   const connection = getConnection('mainnet-beta');
   const raydium = await (Raydium as any).load({ connection, cluster: 'mainnet-beta', disableFeatureCheck: true });
   const pools = await raydium.api.fetchPoolByMints({ mint1: tokenA, mint2: tokenB });

@@ -65,6 +65,7 @@ const AUTO_EARN_ALLOCATIONS: Record<'conservative' | 'balanced' | 'aggressive', 
   balanced: { swapPct: 0.50, stakePct: 0.20 },
   aggressive: { swapPct: 0.55, stakePct: 0.10 },
 };
+const DEVNET_REAL_ONLY = String((import.meta as any).env?.VITE_DEVNET_REAL_ONLY || 'false').toLowerCase() === 'true';
 
 function resolveTokenMint(symbolOrAddress: string, cluster: 'devnet' | 'mainnet-beta' = 'devnet') {
   const normalized = symbolOrAddress?.trim().toUpperCase();
@@ -492,8 +493,8 @@ export function WorkflowCanvas() {
         const protocol = protocolRaw === 'sushiswap' ? 'jupiter' : protocolRaw;
         const cluster = cfg.cluster || (protocol === 'jupiter' ? 'mainnet-beta' : 'devnet');
 
-        const inputMint = cfg.sourceMint || cfg.inputToken || resolveTokenMint(sourceToken, cluster) || resolveTokenMint('SOL', cluster);
-        const outputMint = cfg.targetMint || cfg.outputToken || resolveTokenMint(targetToken, cluster) || resolveTokenMint('USDC', cluster);
+        const inputMint = String(cfg.sourceMint || cfg.inputToken || resolveTokenMint(sourceToken, cluster) || resolveTokenMint('SOL', cluster)).trim();
+        const outputMint = String(cfg.targetMint || cfg.outputToken || resolveTokenMint(targetToken, cluster) || resolveTokenMint('USDC', cluster)).trim();
 
         const uiAmount = parseFloat(cfg.amount || '1.0');
         const slippageBps = parseInt(cfg.slippageBps || String(parseFloat(cfg.slippage || '1') * 100));
@@ -533,10 +534,10 @@ export function WorkflowCanvas() {
                 cluster,
                 protocol: protocol as any,
                 orcaPoolAddress: protocol === 'orca' ? cfg.poolAddress?.trim() : undefined,
-                raydiumPoolId: protocol === 'raydium' ? cfg.poolId?.trim() : undefined,
+                raydiumPoolId: protocol === 'raydium' ? (cfg.poolId?.trim() || undefined) : undefined,
               });
             } catch (routeError: any) {
-              if (cluster === 'devnet') {
+              if (cluster === 'devnet' && !DEVNET_REAL_ONLY) {
                 console.warn('[Swap] Route failed on devnet, falling back to Jupiter mock if possible:', routeError?.message);
                 const fallback = await jupiterSwap({
                   inputMint,
@@ -550,9 +551,17 @@ export function WorkflowCanvas() {
                   cluster,
                   forceMock: true,
                 });
-                fallback.message = `[Fallback to Jupiter] ${fallback.message}`;
+                const reason = routeError?.message
+                  ? `Reason: ${routeError.message}`
+                  : 'No on-chain route available on devnet.';
+                fallback.message = `[Devnet fallback: simulated swap] ${fallback.message}. ${reason}`;
                 result = fallback;
               } else {
+                if (cluster === 'devnet' && DEVNET_REAL_ONLY) {
+                  throw new Error(
+                    `Real-only devnet mode is enabled; refusing simulated fallback. ${routeError?.message || 'No on-chain route available.'}`,
+                  );
+                }
                 throw routeError;
               }
             }
@@ -571,7 +580,7 @@ export function WorkflowCanvas() {
             type: 'swap',
             status: 'success',
             message: `Swapped ${uiAmount} ${sourceToken} for ~${result.outputAmount?.toFixed(4) || '?'} ${targetToken}`,
-            signature: result.signature,
+            signature: result.signature || result.txId,
             details: {
               inputToken: sourceToken,
               outputToken: targetToken,
@@ -766,9 +775,9 @@ export function WorkflowCanvas() {
         }
       }
 
-      // Find and execute Instant SOL Transfer (Lightning module) if present
-      const lightningNode = nodes.find(n => n.data?.type === 'lightning');
-      if (lightningNode) {
+      // Find and execute Instant SOL Transfer (Lightning/Transfer module) if present
+      const lightningNodes = nodes.filter(n => n.data?.type === 'lightning' || n.data?.type === 'transfer');
+      for (const lightningNode of lightningNodes) {
         const cfg = (lightningNode.data?.config || {}) as any;
         const recipient = (cfg.recipient || '').trim();
         const amountSol = parseFloat(cfg.amount || '0');
@@ -805,13 +814,35 @@ export function WorkflowCanvas() {
           tx.feePayer = fromPubkey;
 
           setNodeExecStatus(lightningNode.id, 'running');
-          const signed = await provider.signTransaction(tx);
-          const signature = await connection.sendRawTransaction(signed.serialize());
-          await connection.confirmTransaction({
-            signature,
-            blockhash: latestBlockhash.blockhash,
-            lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-          }, 'confirmed');
+          
+          let signature: string;
+          try {
+            // Prefer signAndSendTransaction if available, as it's more robust
+            if (typeof (provider as any).signAndSendTransaction === 'function') {
+              const result = await (provider as any).signAndSendTransaction(tx);
+              signature = typeof result === 'string' ? result : (result?.signature || result?.txid);
+            } else {
+              const signed = await (provider as any).signTransaction(tx);
+              signature = await connection.sendRawTransaction(signed.serialize(), {
+                skipPreflight: true // Skip preflight to avoid "already processed" simulation errors
+              });
+            }
+
+            await connection.confirmTransaction({
+              signature,
+              blockhash: latestBlockhash.blockhash,
+              lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+            }, 'confirmed');
+          } catch (txErr: any) {
+            // If the error says "already processed", it actually succeeded!
+            if (txErr.message?.includes('already been processed') || txErr.logs?.some((l: string) => l.includes('already been processed'))) {
+              console.log('Transaction already processed, treating as success');
+              // We need a signature to show. If we don't have it, we might have to scrape it from logs or just use a placeholder
+              signature = signature! || 'recovered'; 
+            } else {
+              throw txErr;
+            }
+          }
 
           toast({
             title: 'SOL Transfer Confirmed',
@@ -820,7 +851,7 @@ export function WorkflowCanvas() {
           setNodeExecStatus(lightningNode.id, 'success');
 
           executionActions.push({
-            type: 'lightning',
+            type: 'transfer',
             status: 'success',
             message: `Sent ${amountSol} SOL to ${recipient}`,
             signature,
@@ -829,7 +860,7 @@ export function WorkflowCanvas() {
         } catch (err: any) {
           console.error('SOL transfer error:', err);
           toast({ title: 'SOL Transfer Failed', description: err.message || 'Unknown error', variant: 'destructive' });
-          executionActions.push({ type: 'lightning', status: 'failed', message: err.message || 'Unknown error' });
+          executionActions.push({ type: 'transfer', status: 'failed', message: err.message || 'Unknown error' });
           setNodeExecStatus(lightningNode.id, 'failed');
           return;
         }
@@ -946,8 +977,8 @@ export function WorkflowCanvas() {
         const targetToken = cfg.targetToken || 'USDC';
         const uiAmount    = parseFloat(cfg.amount || '1.0');
         const slippageBps = Math.round(parseFloat(cfg.slippage || '1') * 100);
-        const inputMint = cfg.sourceMint || resolveTokenMint(sourceToken, 'devnet');
-        const outputMint = cfg.targetMint || resolveTokenMint(targetToken, 'devnet');
+        const inputMint = String(cfg.sourceMint || resolveTokenMint(sourceToken, 'devnet')).trim();
+        const outputMint = String(cfg.targetMint || resolveTokenMint(targetToken, 'devnet')).trim();
         const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
         const outputDecimals = TOKEN_DECIMALS[targetToken] || 6;
 
@@ -995,8 +1026,8 @@ export function WorkflowCanvas() {
         const targetToken = cfg.targetToken || 'USDC';
         const uiAmount    = parseFloat(cfg.amount || '1.0');
         const slippageBps = Math.round(parseFloat(cfg.slippage || '1') * 100);
-        const inputMint = cfg.sourceMint || resolveTokenMint(sourceToken, 'devnet');
-        const outputMint = cfg.targetMint || resolveTokenMint(targetToken, 'devnet');
+        const inputMint = String(cfg.sourceMint || resolveTokenMint(sourceToken, 'devnet')).trim();
+        const outputMint = String(cfg.targetMint || resolveTokenMint(targetToken, 'devnet')).trim();
         const inputDecimals = TOKEN_DECIMALS[sourceToken] || 9;
         const outputDecimals = TOKEN_DECIMALS[targetToken] || 6;
 
@@ -1006,9 +1037,11 @@ export function WorkflowCanvas() {
           let result: any;
           try {
             const { getCustomPoolByMints, swapInCpmmPool } = await import('../lib/solana/raydiumDevnet');
+            const explicitPoolId = cfg.poolId?.trim();
             const pool = getCustomPoolByMints(inputMint, outputMint);
-            if (!pool) throw new Error('No Raydium CPMM pool registered for this pair — falling back to mock');
-            const cpmmResult = await swapInCpmmPool({ poolId: pool.poolId, inputMintAddress: inputMint, inputAmount: uiAmount, inputDecimals, slippageBps, fromPubkey: new PublicKey(userPublicKey) });
+            const poolId = explicitPoolId || pool?.poolId;
+            if (!poolId) throw new Error('No Raydium CPMM pool registered for this pair — falling back to mock');
+            const cpmmResult = await swapInCpmmPool({ poolId, inputMintAddress: inputMint, inputAmount: uiAmount, inputDecimals, slippageBps, fromPubkey: new PublicKey(userPublicKey) });
             result = { signature: cpmmResult.txId, mode: 'real', message: cpmmResult.message };
           } catch (rayErr: any) {
             console.warn('[RaydiumSwap] Raydium failed, falling back to Jupiter mock:', rayErr.message);
@@ -1053,7 +1086,7 @@ export function WorkflowCanvas() {
       }
 
       // If no executable nodes found
-      const hasExecutableNode = autoEarnNodes.length || swapNode || liquidityNode || stakeNode || lightningNode || claimNode || bridgeNodes.length
+      const hasExecutableNode = autoEarnNodes.length || swapNode || liquidityNode || stakeNode || lightningNodes.length || claimNode || bridgeNodes.length
         || orcaSwapNodes.length || raydiumSwapNodes.length || tokenCreationNodes.length;
       if (!hasExecutableNode) {
         toast({ title: 'No Executable Actions', description: 'Add Auto-Earn, Swap, Liquidity, Stake, Claim Rewards, Lightning, Orca Swap, Raydium Swap, or Create Token modules to execute.', variant: 'destructive' });
@@ -1136,7 +1169,7 @@ export function WorkflowCanvas() {
         </div>
       </div>
       
-  <div ref={reactFlowWrapper} className="flex-1 overflow-hidden relative" style={{ width: '100%', height: 'calc(100vh - 64px)' }}>
+  <div ref={reactFlowWrapper} className="flex-1 overflow-hidden relative w-full" style={{ height: 'calc(100vh - 120px)', minHeight: '500px' }}>
         <ReactFlow
           nodes={nodes}
           edges={edges}

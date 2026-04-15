@@ -21,7 +21,7 @@ export default defineConfig({
       "@": path.resolve(import.meta.dirname, "client", "src"),
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
-      "buffer": "buffer",
+      "buffer": "buffer/",
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
@@ -34,8 +34,7 @@ export default defineConfig({
     'process.env': {},
   },
   optimizeDeps: {
-    include: ['buffer', '@marinade.finance/marinade-ts-sdk', '@solana/spl-token'],
-    exclude: ['@raydium-io/raydium-sdk-v2'],
+    include: ['buffer', '@marinade.finance/marinade-ts-sdk', '@solana/spl-token', '@raydium-io/raydium-sdk-v2', 'bn.js'],
     esbuildOptions: {
       define: {
         global: 'globalThis',

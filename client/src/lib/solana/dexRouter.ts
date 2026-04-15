@@ -87,17 +87,22 @@ export async function routedSwap(params: RouterSwapParams): Promise<RouterSwapRe
     orcaPoolAddress, raydiumPoolId,
   } = params;
 
+  const normalizedInputMint = inputMintAddress.trim();
+  const normalizedOutputMint = outputMintAddress.trim();
+  const normalizedOrcaPoolAddress = orcaPoolAddress?.trim();
+  const normalizedRaydiumPoolId = raydiumPoolId?.trim() || undefined;
+
   const fromPubkey = new PublicKey(walletAddress);
 
   // ── Orca (explicit or auto with pool address) ──────────────────────────────
   if (protocol === 'orca' || (protocol === 'auto' && orcaPoolAddress)) {
-    if (!orcaPoolAddress) {
+    if (!normalizedOrcaPoolAddress) {
       throw new Error('orcaPoolAddress is required when protocol="orca"');
     }
     const { swapOnOrca } = await import('./orcaWhirlpool');
     const r = await swapOnOrca({
-      poolAddress: orcaPoolAddress,
-      inputMintAddress, inputAmount, inputDecimals,
+      poolAddress: normalizedOrcaPoolAddress,
+      inputMintAddress: normalizedInputMint, inputAmount, inputDecimals,
       slippageBps, fromPubkey, cluster,
     });
     return { success: true, txId: r.txId, protocol: 'orca', mode: 'real', message: r.message };
@@ -105,14 +110,64 @@ export async function routedSwap(params: RouterSwapParams): Promise<RouterSwapRe
 
   // ── Raydium CPMM ───────────────────────────────────────────────────────────
   if (protocol === 'raydium' || protocol === 'auto') {
-    const { getCustomPoolByMints, swapInCpmmPool } = await import('./raydiumDevnet');
-    const poolId = raydiumPoolId ?? getCustomPoolByMints(inputMintAddress, outputMintAddress)?.poolId;
+    const { getCustomPoolByMints, removeCustomPoolById, swapInCpmmPool } = await import('./raydiumDevnet');
+    const pairPool = getCustomPoolByMints(normalizedInputMint, normalizedOutputMint);
+    const pairPoolId = pairPool?.poolId;
+    const isPoolFetchError = (err: any) =>
+      typeof err?.message === 'string' &&
+      (err.message.includes('fetch pool info error') || err.message.includes('not found on devnet'));
+    const trySwapWithPool = async (poolId: string) => swapInCpmmPool({
+      poolId,
+      inputMintAddress: normalizedInputMint,
+      inputAmount,
+      inputDecimals,
+      slippageBps,
+      fromPubkey,
+    });
 
-    if (poolId) {
-      const r = await swapInCpmmPool({
-        poolId, inputMintAddress, inputAmount, inputDecimals, slippageBps, fromPubkey,
-      });
-      return { success: true, txId: r.txId, protocol: 'raydium', mode: 'real', message: r.message };
+    if (normalizedRaydiumPoolId) {
+      try {
+        const r = await trySwapWithPool(normalizedRaydiumPoolId);
+        return { success: true, txId: r.txId, protocol: 'raydium', mode: 'real', message: r.message };
+      } catch (explicitPoolErr: any) {
+        if (isPoolFetchError(explicitPoolErr)) {
+          removeCustomPoolById(normalizedRaydiumPoolId);
+        }
+        if (pairPoolId && pairPoolId !== normalizedRaydiumPoolId) {
+          try {
+            const r = await trySwapWithPool(pairPoolId);
+            return {
+              success: true,
+              txId: r.txId,
+              protocol: 'raydium',
+              mode: 'real',
+              message: `${r.message} (Fallback pool used because provided Pool ID failed)`,
+            };
+          } catch {
+            throw explicitPoolErr;
+          }
+        }
+        throw new Error(
+          `Pool ID ${normalizedRaydiumPoolId.slice(0, 8)}... is invalid or unavailable on devnet. ` +
+          'Please clear/update Pool ID or create a new pool for this mint pair.',
+        );
+      }
+    }
+
+    if (pairPoolId) {
+      try {
+        const r = await trySwapWithPool(pairPoolId);
+        return { success: true, txId: r.txId, protocol: 'raydium', mode: 'real', message: r.message };
+      } catch (pairPoolErr: any) {
+        if (isPoolFetchError(pairPoolErr)) {
+          removeCustomPoolById(pairPoolId);
+          throw new Error(
+            'Your cached pool ID for this token pair is stale and has been cleared. ' +
+            'Please create a new Raydium pool, then run swap again.',
+          );
+        }
+        throw pairPoolErr;
+      }
     }
 
     if (protocol === 'raydium') {
@@ -137,8 +192,8 @@ export async function routedSwap(params: RouterSwapParams): Promise<RouterSwapRe
 
     const { jupiterSwap } = await import('./jupiterSwap');
     const r = await jupiterSwap({
-      inputMint: inputMintAddress,
-      outputMint: outputMintAddress,
+      inputMint: normalizedInputMint,
+      outputMint: normalizedOutputMint,
       uiAmount: inputAmount,
       inputDecimals,
       outputDecimals,

@@ -91,7 +91,7 @@ export function ExecutionHistory() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-96">
+    <div className="fixed bottom-4 right-4 z-50 w-[min(92vw,42rem)]">
       <Card className="border border-zinc-700 shadow-2xl" style={{ backgroundColor: '#1a1a2e', backdropFilter: 'none' }}>
         <div className="p-3 border-b border-dark-100 flex items-center justify-between">
           <h3 className="font-medium flex items-center gap-2">
@@ -107,7 +107,7 @@ export function ExecutionHistory() {
           </Button>
         </div>
 
-        <ScrollArea className="h-80">
+        <ScrollArea className="h-[min(70vh,42rem)]">
           {history.length === 0 ? (
             <div className="p-4 text-center text-muted-foreground">
               <span className="material-icons text-4xl mb-2">inbox</span>
@@ -201,9 +201,9 @@ function ExecutionRecordCard({ record }: { record: ExecutionRecord }) {
               {action.details && (
                 <div className="ml-5 mt-1 p-2 rounded text-xs" style={{ backgroundColor: '#0f3460' }}>
                   {Object.entries(action.details).map(([key, value]) => (
-                    <div key={key} className="flex justify-between">
+                    <div key={key} className="grid grid-cols-[9rem_1fr] gap-2">
                       <span className="text-muted-foreground">{key}:</span>
-                      <span>{String(value)}</span>
+                      <span className="break-all">{String(value)}</span>
                     </div>
                   ))}
                 </div>

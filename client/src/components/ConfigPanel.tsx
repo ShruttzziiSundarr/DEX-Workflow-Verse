@@ -1849,6 +1849,85 @@ export function ConfigPanel() {
       );
       break;
 
+    case "transfer":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(245,158,11,0.2)" }}>
+              <span className="material-icons" style={{ color: "#F59E0B" }}>send</span>
+            </div>
+            <h3 className="text-base font-medium">Transfer Configuration</h3>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input value={transferConfig.moduleName} onChange={(e) => setTransferConfig({...transferConfig, moduleName: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Recipient Address</Label>
+              <Input placeholder="Solana wallet address..." value={transferConfig.recipient} onChange={(e) => setTransferConfig({...transferConfig, recipient: e.target.value})} className="mt-1 bg-background border-border font-mono text-xs" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Amount</Label>
+                <Input type="text" value={transferConfig.amount} onChange={(e) => setTransferConfig({...transferConfig, amount: e.target.value})} className="mt-1 bg-background border-border" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Token</Label>
+                <Select value={transferConfig.token} onValueChange={(v) => setTransferConfig({...transferConfig, token: v})}>
+                  <SelectTrigger className="mt-1 bg-background border-border"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="SOL">SOL</SelectItem>
+                    <SelectItem value="USDC">USDC (Mock)</SelectItem>
+                    <SelectItem value="USDT">USDT (Mock)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Memo (Optional)</Label>
+              <Input placeholder="Message to recipient" value={transferConfig.memo} onChange={(e) => setTransferConfig({...transferConfig, memo: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div className="rounded-md bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-300">
+              <span className="material-icons text-xs mr-1 align-middle">info</span>
+              This will send real assets on <strong>devnet</strong>. Ensure the recipient address is correct.
+            </div>
+          </div>
+        </div>
+      );
+      break;
+
+    case "lightning":
+      configContent = (
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 mb-2">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(245,158,11,0.2)" }}>
+              <span className="material-icons" style={{ color: "#F59E0B" }}>bolt</span>
+            </div>
+            <h3 className="text-base font-medium">Lightning Transfer Configuration</h3>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Module Name</Label>
+              <Input value={lightningConfig.moduleName} onChange={(e) => setLightningConfig({...lightningConfig, moduleName: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Recipient Address</Label>
+              <Input placeholder="Solana wallet address..." value={lightningConfig.recipient} onChange={(e) => setLightningConfig({...lightningConfig, recipient: e.target.value})} className="mt-1 bg-background border-border font-mono text-xs" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Amount (SOL)</Label>
+              <Input type="text" value={lightningConfig.amount} onChange={(e) => setLightningConfig({...lightningConfig, amount: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Memo</Label>
+              <Input placeholder="Optional message" value={lightningConfig.memo} onChange={(e) => setLightningConfig({...lightningConfig, memo: e.target.value})} className="mt-1 bg-background border-border" />
+            </div>
+          </div>
+        </div>
+      );
+      break;
+
     default:
       configContent = <div>No configuration available for this module type</div>;
   }

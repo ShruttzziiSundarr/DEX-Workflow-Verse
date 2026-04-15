@@ -17,6 +17,8 @@
  */
 
 import { Connection, PublicKey, clusterApiUrl } from '@solana/web3.js';
+import { Raydium, DEVNET_PROGRAM_ID, TxVersion, Percent } from '@raydium-io/raydium-sdk-v2';
+import BN from 'bn.js';
 
 // ── Devnet CPMM constants ─────────────────────────────────────────────────────
 // These are DEVNET values from DEVNET_PROGRAM_ID in @raydium-io/raydium-sdk-v2
@@ -32,7 +34,6 @@ const DEVNET_FEE_CONFIG_ID = '9zSzfkYy6awexsHvmggeH36pfVUdDGyCcwmjT3AQPBj6';
 const TX_LEGACY = 1;
 
 const WSOL = 'So11111111111111111111111111111111111111112';
-const RAYDIUM_SDK = '@raydium-io/raydium-sdk-v2';
 
 // ── localStorage pool registry ────────────────────────────────────────────────
 
@@ -74,6 +75,17 @@ export function getCustomPoolByMints(mintA: string, mintB: string): CustomPoolRe
     (p.mintA === mintA && p.mintB === mintB) ||
     (p.mintA === mintB && p.mintB === mintA),
   );
+}
+
+/** Remove a cached pool record by pool ID (used when stale IDs cause RPC lookup failures). */
+export function removeCustomPoolById(poolId: string): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const normalized = poolId.trim();
+    if (!normalized) return;
+    const next = loadCustomPools().filter((p) => p.poolId !== normalized);
+    localStorage.setItem(CUSTOM_POOLS_KEY, JSON.stringify(next));
+  } catch {}
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -144,15 +156,12 @@ async function phantomProvider() {
 }
 
 async function loadSDK() {
-  return import(/* @vite-ignore */ RAYDIUM_SDK).catch(() => {
-    throw new Error('Raydium SDK missing. Run: npm install @raydium-io/raydium-sdk-v2');
-  });
+  return { Raydium, DEVNET_PROGRAM_ID, TxVersion };
 }
 
-/** Import BN from bn.js (transitive dep of the SDK — always present). */
+/** Return BN constructor (statically imported). */
 async function getBN(): Promise<any> {
-  const m = await import(/* @vite-ignore */ 'bn.js');
-  return m.default ?? m;
+  return BN;
 }
 
 /**
@@ -171,8 +180,12 @@ async function initRaydium(fromPubkey: PublicKey) {
     cluster: 'devnet',
     signAllTransactions: (txs: any[]) => provider.signAllTransactions(txs),
     disableFeatureCheck: true,
+    disableLoadToken: true, // Bypass Devnet Token API timeouts
     blockhashCommitment: 'confirmed',
   });
+
+  // Force-sync immediately so it doesn't falsely throw "you don't has some token account"
+  await raydium.account.fetchWalletTokenAccounts();
 
   return { raydium, connection };
 }
@@ -216,7 +229,7 @@ export async function createCustomTokenPool(params: CpmmCreatePoolParams): Promi
     raydium.token.getTokenInfo(mintBAddress),
   ]);
 
-  // Fetch fee configs; override the id for devnet
+  // Fetch fee configs; use the first one from devnet directly
   const feeConfigs = await raydium.api.getCpmmConfigs();
   if (!feeConfigs?.length) {
     throw new Error(
@@ -224,7 +237,7 @@ export async function createCustomTokenPool(params: CpmmCreatePoolParams): Promi
       'Ensure your RPC points to devnet and Raydium devnet contracts are deployed.',
     );
   }
-  const feeConfig = { ...feeConfigs[0], id: DEVNET_FEE_CONFIG_ID };
+  const feeConfig = feeConfigs[0];
 
   const mintAAmount = new BN(Math.floor(initialAmountA * 10 ** mintADecimals).toString());
   const mintBAmount = new BN(Math.floor(initialAmountB * 10 ** mintBDecimals).toString());
@@ -244,7 +257,8 @@ export async function createCustomTokenPool(params: CpmmCreatePoolParams): Promi
     txVersion:      TX_LEGACY,
   });
 
-  const { txIds } = await execute({ sendAndConfirm: true });
+  const execResult = await execute({ sendAndConfirm: true }) as any;
+  const txIdStr = execResult?.txIds?.[0] || execResult?.txId || execResult?.signature || (typeof execResult === 'string' ? execResult : 'unknown');
   const poolId  = extInfo?.address?.poolId?.toBase58?.()  ?? 'unknown';
   const lpMint  = extInfo?.address?.lpMint?.toBase58?.()  ?? undefined;
 
@@ -258,10 +272,10 @@ export async function createCustomTokenPool(params: CpmmCreatePoolParams): Promi
 
   return {
     success: true,
-    txId: txIds[0],
+    txId: txIdStr,
     poolId, lpMint,
     mode: 'real',
-    message: `Pool created: ${mintASymbol}/${mintBSymbol} | ID: ${poolId} | tx: ${txIds[0]}`,
+    message: `Pool created: ${mintASymbol}/${mintBSymbol} | ID: ${poolId} | tx: ${txIdStr}`,
   };
 }
 
@@ -305,7 +319,7 @@ export async function swapInCpmmPool(params: CpmmSwapParams): Promise<CpmmResult
 
   const baseIn        = poolInfo.mintA.address === inputMintAddress;
   const inputAmountBn = new BN(Math.floor(inputAmount * 10 ** inputDecimals).toString());
-  const slippage      = slippageBps / 10000;
+  const slippage      = new Percent(slippageBps, 10000);
 
   // compute expected output from on-chain reserves
   // Parameter names verified against CpmmComputeData type in SDK:
@@ -327,7 +341,8 @@ export async function swapInCpmmPool(params: CpmmSwapParams): Promise<CpmmResult
     txVersion: TX_LEGACY,
   });
 
-  const { txIds } = await execute({ sendAndConfirm: true });
+  const execResult = await execute({ sendAndConfirm: true }) as any;
+  const txIdStr = execResult?.txIds?.[0] || execResult?.txId || execResult?.signature || (typeof execResult === 'string' ? execResult : 'unknown');
 
   const outMint    = baseIn ? poolInfo.mintB : poolInfo.mintA;
   const outAmount  = ((swapResult.amountOut as any).toNumber() / 10 ** outMint.decimals).toFixed(6);
@@ -335,10 +350,10 @@ export async function swapInCpmmPool(params: CpmmSwapParams): Promise<CpmmResult
 
   return {
     success: true,
-    txId: txIds[0],
+    txId: txIdStr,
     poolId,
     mode: 'real',
-    message: `Swapped ${inputAmount} tokens → ~${outAmount} ${outSymbol} | tx: ${txIds[0]}`,
+    message: `Swapped ${inputAmount} tokens → ~${outAmount} ${outSymbol} | tx: ${txIdStr}`,
   };
 }
 
@@ -374,7 +389,7 @@ export async function addLiquidityToCpmm(params: CpmmLiquidityParams): Promise<C
   const { poolInfo, poolKeys } = poolData;
   const baseIn        = poolInfo.mintA.address === inputMintAddress;
   const inputAmountBn = new BN(Math.floor(inputAmount * 10 ** inputDecimals).toString());
-  const slippage      = slippageBps / 10000;
+  const slippage      = new Percent(slippageBps, 10000);
 
   const { execute, extInfo } = await raydium.cpmm.addLiquidity({
     poolInfo, poolKeys,
@@ -384,15 +399,16 @@ export async function addLiquidityToCpmm(params: CpmmLiquidityParams): Promise<C
     txVersion: TX_LEGACY,
   });
 
-  const { txIds } = await execute({ sendAndConfirm: true });
+  const execResult = await execute({ sendAndConfirm: true }) as any;
+  const txIdStr = execResult?.txIds?.[0] || execResult?.txId || execResult?.signature || (typeof execResult === 'string' ? execResult : 'unknown');
   const lpReceived = extInfo?.addLpAmount?.toNumber?.() ?? 0;
 
   return {
     success: true,
-    txId: txIds[0],
+    txId: txIdStr,
     poolId,
     mode: 'real',
-    message: `Liquidity added to pool ${poolId.slice(0, 8)}... | LP received: ${lpReceived} | tx: ${txIds[0]}`,
+    message: `Liquidity added to pool ${poolId.slice(0, 8)}... | LP received: ${lpReceived} | tx: ${txIdStr}`,
   };
 }
 
@@ -423,16 +439,33 @@ export async function removeLiquidityFromCpmm(params: CpmmLiquidityParams): Prom
   const { poolInfo, poolKeys } = poolData;
   const lpDec       = lpDecimals ?? poolInfo.lpMint?.decimals ?? 9;
   const lpAmountBn  = new BN(Math.floor(lpAmount * 10 ** lpDec).toString());
-  const slippage    = slippageBps / 10000;
+  const slippage    = new Percent(slippageBps, 10000);
 
-  const { execute, extInfo } = await raydium.cpmm.removeLiquidity({
-    poolInfo, poolKeys,
+  const cpmmAny = raydium.cpmm as any;
+  const removeFn =
+    cpmmAny.removeLiquidity ??
+    cpmmAny.withdraw ??
+    cpmmAny.withdrawLiquidity;
+
+  if (typeof removeFn !== 'function') {
+    const available = Object.keys(cpmmAny || {})
+      .filter((k) => /(liquidity|withdraw|remove)/i.test(k))
+      .join(', ');
+    throw new Error(
+      `Your Raydium SDK version does not expose a CPMM remove-liquidity method. Available CPMM methods: ${available || 'none'}`,
+    );
+  }
+
+  const { execute, extInfo } = await removeFn.call(cpmmAny, {
+    poolInfo,
+    poolKeys,
     lpAmount: lpAmountBn,
     slippage,
     txVersion: TX_LEGACY,
   });
 
-  const { txIds } = await execute({ sendAndConfirm: true });
+  const execResult = await execute({ sendAndConfirm: true }) as any;
+  const txIdStr = execResult?.txIds?.[0] || execResult?.txId || execResult?.signature || (typeof execResult === 'string' ? execResult : 'unknown');
 
   const aAmt   = (extInfo?.amountA?.toNumber?.() ?? 0) / 10 ** poolInfo.mintA.decimals;
   const bAmt   = (extInfo?.amountB?.toNumber?.() ?? 0) / 10 ** poolInfo.mintB.decimals;
@@ -441,10 +474,10 @@ export async function removeLiquidityFromCpmm(params: CpmmLiquidityParams): Prom
 
   return {
     success: true,
-    txId: txIds[0],
+    txId: txIdStr,
     poolId,
     mode: 'real',
-    message: `Removed ${lpAmount} LP → ~${aAmt.toFixed(4)} ${symA} + ~${bAmt.toFixed(4)} ${symB} | tx: ${txIds[0]}`,
+    message: `Removed ${lpAmount} LP → ~${aAmt.toFixed(4)} ${symA} + ~${bAmt.toFixed(4)} ${symB} | tx: ${txIdStr}`,
   };
 }
 
